@@ -1,0 +1,6 @@
+PUBLICAR BETTARGET (gratis, sin claves)
+1. Crea una cuenta en github.com y un repositorio público nuevo (ej. bettarget).
+2. Sube estos archivos tal cual: index.html, build_data.py y la carpeta .github (con update.yml).
+3. Settings > Pages > Source: "Deploy from a branch" > main / (root). Guarda.
+4. Pestaña Actions > "Actualizar datos" > Run workflow (solo la primera vez; luego se ejecuta solo a las 05:00 y 13:00 UTC).
+5. Tu enlace será https://TU_USUARIO.github.io/bettarget/ : ese es el que mandas.
