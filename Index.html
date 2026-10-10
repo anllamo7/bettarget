@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><title>BETTARGET</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f4f6f8;--card:#fff;--tx:#14202b;--mu:#667685;--ln:#dde3e8;--ac:#0b7a5a;--acx:#fff;--g:#0b7a5a;--y:#a87400;--r:#c0392b}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0e1419;--card:#17202a;--tx:#eaf0f5;--mu:#8fa1b0;--ln:#273543;--ac:#2ecf9a;--acx:#06251b;--g:#2ecf9a;--y:#f0b429;--r:#ff6b5a}}
+:root[data-theme=dark]{--bg:#0e1419;--card:#17202a;--tx:#eaf0f5;--mu:#8fa1b0;--ln:#273543;--ac:#2ecf9a;--acx:#06251b;--g:#2ecf9a;--y:#f0b429;--r:#ff6b5a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:560px;margin:0 auto;padding:16px 14px 60px}h1{font-size:22px;letter-spacing:2px;margin:4px 0 10px}h1 span{color:var(--ac)}
+label{display:block;font-size:12px;font-weight:700;letter-spacing:.8px;color:var(--mu);margin:14px 0 6px}
+input,select{width:100%;font:inherit;font-size:18px;padding:12px;border-radius:12px;border:1px solid var(--ln);background:var(--card);color:var(--tx)}
+.row{display:flex;gap:8px}.row button{flex:1;padding:12px 4px;border-radius:12px;border:1px solid var(--ln);background:var(--card);color:var(--tx);font:600 14px inherit}.row button.on{background:var(--ac);color:var(--acx);border-color:var(--ac)}
+.go{width:100%;margin-top:18px;padding:15px;border:0;border-radius:14px;background:var(--ac);color:var(--acx);font:800 17px inherit;letter-spacing:1px}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:12px;margin:10px 0}.best{border:2px solid var(--ac)}
+.top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--mu)}.ev{font-weight:700;font-size:17px;margin:4px 0 0}.sel{font-size:14px;color:var(--mu)}.sel b{color:var(--tx)}
+.st{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}.st div{background:var(--bg);border-radius:10px;padding:6px;text-align:center;font-size:11px;color:var(--mu)}.st b{display:block;font-size:15px;color:var(--tx)}
+.bd{font-size:12px;font-weight:700}.g{color:var(--g)}.y{color:var(--y)}.r{color:var(--r)}.n{color:var(--mu)}
+.l{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--ln);font-size:14px}.l small{display:block;color:var(--mu)}
+.flt{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.flt select{font-size:14px;padding:9px}
+.w{font-size:12px;color:var(--mu);margin:12px 0}.e{color:var(--r);font-weight:700}
+</style></head><body><main>
+<h1>BET<span>TARGET</span></h1>
+<label>¿CUÁNTO TIENES? (€)</label><input id="st" type="number" inputmode="decimal" value="20" min="1" step="any">
+<label>¿CUÁNTO QUIERES CONSEGUIR? (€)</label><input id="tg" type="number" inputmode="decimal" value="50" min="1" step="any">
+<label>¿CUÁNDO?</label><div class="row" id="days"><button data-d="0" class="on">HOY</button><button data-d="1">MAÑANA</button><button data-d="2">PASADO MAÑANA</button></div>
+<button class="go" id="go">BUSCAR</button>
+<div id="out"></div>
+<p class="w" id="up">Cargando datos…</p><p class="w">Análisis automático con los últimos 8 partidos de cada equipo en 17 ligas europeas (las 5 grandes, sus segundas divisiones, Países Bajos, Portugal, Bélgica, Turquía, Escocia y Grecia). La <b>cuota justa</b> es 1/probabilidad y <b>no es el precio de ninguna casa</b>: solo en 1X2 y goles se usa la cuota real de Bet365. Para córners, tarjetas y faltas, compara con la cuota real y no juegues si es menor.</p>
+<p class="w">⚠️ Herramienta de análisis estadístico: las probabilidades son estimaciones y no garantizan nada. No hay apuestas seguras ni ganancias aseguradas. No ejecuta apuestas. Juega con responsabilidad (+18). Ayuda: 900 200 225.</p>
+</main>
+<script>
+const $=s=>document.querySelector(s),eur=n=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(n),f2=n=>n.toFixed(2).replace('.',','),pc=n=>Math.round(n*100)+'%';
+let day=0,SEL=[],need=1,D=null;
+$('#days').onclick=e=>{if(!e.target.dataset.d)return;day=+e.target.dataset.d;document.querySelectorAll('#days button').forEach(b=>b.classList.toggle('on',b===e.target))};
+fetch('data.json?'+Date.now()).then(r=>r.json()).then(j=>{D=j;const h=(Date.now()-new Date(j.updated))/36e5;$('#up').textContent='Datos actualizados: '+new Date(j.updated).toLocaleString('es-ES')+(h>30?' ⚠ pueden estar desfasados':'')}).catch(()=>{$('#up').textContent='Aún no hay datos publicados.'});
+const vb=v=>v==null?['n','Cuota justa: compara con tu casa']:v>.03?['g','🟢 Posible valor estadístico']:v>=-.03?['y','🟡 Valor neutral']:['r','🔴 Poco valor estadístico'];
+$('#go').onclick=()=>{const st=+$('#st').value,tg=+$('#tg').value;
+ if(!(st>0)||!(tg>st)){$('#out').innerHTML='<p class="e">El objetivo debe ser mayor que el dinero disponible.</p>';return}
+ if(!D){$('#out').innerHTML='<p class="e">Aún no hay datos publicados.</p>';return}
+ need=tg/st;const d=new Date();d.setDate(d.getDate()+day);const k=d.toLocaleDateString('sv-SE'),now=new Date(),nm=now.getHours()*60+now.getMinutes();
+ SEL=(D.days[k]||[]).filter(x=>day>0||!x.t||(+x.t.slice(0,2)*60+ +x.t.slice(3))>nm).map(x=>({...x,eff:x.r||1/x.p,val:x.r?x.p*x.r-1:null}));
+ if(!SEL.length){$('#out').innerHTML='<p class="e">No hay partidos con datos suficientes para ese día.</p>';return}draw(true)};
+function bestCombo(){const by={};SEL.filter(x=>x.eff>=1.1).forEach(x=>(by[x.h+x.a]??=[]).push(x));
+ const M=Object.values(by).map(v=>v.sort((a,b)=>b.p-a.p).slice(0,8)),hi=need*1.25,Q=50,K=n=>Math.round(Math.log(n)*Q);
+ let S=new Map([['0:0',{o:1,l:0,a:[]}]]);
+ for(const c of M){const N=new Map(S);for(const s of S.values()){if(s.a.length>=10)continue;for(const x of c){const o=s.o*x.eff;if(o>hi)continue;const l=s.l+Math.log(x.p)-.03,k=(s.a.length+1)+':'+K(o),b=N.get(k);if(!b||l>b.l)N.set(k,{o,l,a:[...s.a,x]})}}S=N}
+ let B=null;for(const s of S.values())if(s.a.length&&s.o>=need&&s.o<=hi&&(!B||s.l>B.l))B=s;
+ return B&&{a:B.a,o:B.o,p:B.a.reduce((t,x)=>t*x.p,1)}}
+function draw(first){const st=+$('#st').value,tg=+$('#tg').value;
+ if(first){const mk=[...new Set(SEL.map(x=>x.mk))];$('#out').innerHTML=`<div class="card" style="text-align:center"><span class="n">Cuota necesaria</span><div style="font-size:28px;font-weight:800;color:var(--ac)">${f2(need)}</div></div><div id="bc"></div>
+ <div class="flt"><select id="so"><option value="n">Ordenar: cercanía al objetivo</option><option value="p">Mayor probabilidad</option><option value="v">Mejor valor (cuota real)</option></select><select id="fm"><option value="">Mercado: todos</option>${mk.map(m=>`<option>${m}</option>`).join('')}</select></div><div id="ls"></div>`;
+  $('#so').oninput=$('#fm').oninput=()=>draw();
+  const B=bestCombo();$('#bc').innerHTML=B?`<div class="card best"><b>🎯 Mi recomendación para tu objetivo</b><p class="w" style="margin:4px 0">La combinación más probable según los datos con cuota entre ${f2(need)} y ${f2(need*1.25)}. No es segura: nada lo es.</p>${B.p<.1?`<p class="w e">⚠ Con cuotas tan altas la probabilidad de acertar todo es muy baja (${pc(B.p)}). Cuanto mayor es la cuota, más selecciones hacen falta y más fácil es fallar.</p>`:''}${B.a.map(x=>`<div class="l"><span>${x.h} – ${x.a} · ${x.t}<small>${x.mk}: <b>${x.s}</b> · ${pc(x.p)}</small></span><b>${f2(x.eff)}${x.r?'':'*'}</b></div>`).join('')}
+  <div class="l"><span>Cuota total</span><b>${f2(B.o)}</b></div><div class="l"><span>Cantidad necesaria para ${eur(tg)}</span><b>${eur(tg/B.o)}</b></div><div class="l"><span>Retorno con ${eur(st)}</span><b>${eur(st*B.o)}</b></div><div class="l"><span>Beneficio potencial</span><b>${eur(st*B.o-st)}</b></div><div class="l"><span>Probabilidad estimada</span><b>${pc(B.p)}</b></div>
+  <p class="w">* Cuota justa (1/prob.), no es el precio real de la casa: revísalo antes de decidir.</p></div>`:`<p class="n">No hay partidos suficientes ese día para llegar a la cuota ${f2(need)}. Prueba otro día o un objetivo menor.</p>`}
+ const so=$('#so').value,fm=$('#fm').value;let L=SEL.filter(x=>!fm||x.mk===fm);
+ L.sort({n:(a,b)=>Math.abs(a.eff-need)-Math.abs(b.eff-need)||b.p-a.p,p:(a,b)=>b.p-a.p,v:(a,b)=>(b.val??-9)-(a.val??-9)}[so]);
+ $('#ls').innerHTML=`<p class="n">${L.length} opciones (mostrando 30)</p>`+L.slice(0,30).map(x=>{const[c,t]=vb(x.val),ret=st*x.eff;return`<div class="card"><div class="top"><span>⚽ ${x.lg}</span><span>${x.t}</span></div><div class="ev">${x.h} – ${x.a}</div><div class="sel">${x.mk}: <b>${x.s}</b></div>
+ <div class="st"><div>Prob. estimada<b>${pc(x.p)}</b></div><div>Cuota justa<b>${f2(1/x.p)}</b></div><div>Cuota real<b>${x.r?f2(x.r):'—'}</b></div><div>Retorno<b>${eur(ret)}</b></div><div>Beneficio<b>${eur(ret-st)}</b></div><div>Vs objetivo<b class="${ret>=tg?'g':'r'}">${(ret>=tg?'+':'')+eur(ret-tg)}</b></div></div>
+ <div class="bd ${c}">${t}</div><div class="sel">${x.n}</div></div>`}).join('')}
+</script></body></html>
