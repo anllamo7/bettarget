@@ -1,12 +1,14 @@
 """Descarga datos gratuitos de football-data.co.uk (sin clave), calcula probabilidades
 con los últimos partidos de cada equipo y escribe data.json para los próximos 3 días."""
-import csv, io, json, math, urllib.request, datetime as dt
+import csv, io, json, math, os, re, time, unicodedata, urllib.request, datetime as dt
 BASE = 'https://www.football-data.co.uk/'
 LG = {'SP1': 'LaLiga', 'SP2': 'LaLiga 2', 'E0': 'Premier League', 'E1': 'Championship', 'E2': 'League One', 'I1': 'Serie A', 'I2': 'Serie B',
       'D1': 'Bundesliga', 'D2': '2. Bundesliga', 'F1': 'Ligue 1', 'F2': 'Ligue 2', 'N1': 'Eredivisie', 'P1': 'Primeira Liga',
       'B1': 'Pro League', 'T1': 'Süper Lig', 'SC0': 'Premiership', 'G1': 'Super League'}
-PH = {'c': 1.4, 'y': 1.25, 'f': 1.5}
-NM = {'c': 'Córners totales', 'y': 'Tarjetas totales (amarillas+rojas)', 'f': 'Faltas totales'}
+PH = {'c': 1.4, 'y': 1.25, 's': 1.3, 't': 1.2}
+NM = {'c': 'Córners totales', 'y': 'Tarjetas totales', 's': 'Remates totales', 't': 'Remates a puerta totales'}
+NMT = {'c': 'Córners de equipo', 'y': 'Tarjetas de equipo', 's': 'Remates de equipo', 't': 'Remates a puerta de equipo'}
+MOST = {'c': 'Más córners', 'y': 'Más tarjetas', 's': 'Más remates', 't': 'Más remates a puerta'}
 
 def get(path):
     rq = urllib.request.Request(BASE + path, headers={'User-Agent': 'Mozilla/5.0'})
@@ -26,13 +28,13 @@ def n(x):
 def V(x):
     return {'g': (n(x.get('FTHG')), n(x.get('FTAG'))), 'c': (n(x.get('HC')), n(x.get('AC'))),
             'y': (n(x.get('HY')) + n(x.get('HR') or 0), n(x.get('AY')) + n(x.get('AR') or 0)),
-            'f': (n(x.get('HF')), n(x.get('AF')))}
+            's': (n(x.get('HS')), n(x.get('AS'))), 't': (n(x.get('HST')), n(x.get('AST')))}
 
 def form(hist, t):
     m = [x for x in hist if t in (x['HomeTeam'], x['AwayTeam'])][-8:]
     if len(m) < 5: return None
     o = {}
-    for k in 'gcyf':
+    for k in 'gcyst':
         s = [0, 0]; c = 0
         for x in m:
             v = V(x)[k]
@@ -44,7 +46,7 @@ def form(hist, t):
 
 def lgavg(hist):
     o = {}
-    for k in 'gcyf':
+    for k in 'gcyst':
         v = [(a + b) / 2 for a, b in (V(x)[k] for x in hist) if not math.isnan(a + b)]
         o[k] = sum(v) / len(v) if v else 0
     return o
@@ -60,8 +62,8 @@ def analyze(r, hist, div):
     t = r.get('Time') or ''
     if t:
         h, m = t.split(':'); t = '%02d:%s' % ((int(h) + 1) % 24, m)  # hora UK -> España
-    def add(mk, sel, p, real, note):
-        if .1 <= p <= .96:
+    def add(mk, sel, p, real, note, lo=.1):
+        if lo <= p <= .96:
             out.append(dict(h=r['HomeTeam'], a=r['AwayTeam'], lg=LG[div], t=t, mk=mk, s=sel, p=round(p, 4), r=real, n=note))
     def mu(k):
         if not Fh[k] or not Fa[k]: return None
@@ -91,20 +93,186 @@ def analyze(r, hist, div):
         add('Ambos marcan', 'Sí', b, None, note); add('Ambos marcan', 'No', 1 - b, None, note)
         add('Doble oportunidad', '1X · ' + r['HomeTeam'] + ' o empate', h + d, None, note)
         add('Doble oportunidad', 'X2 · ' + r['AwayTeam'] + ' o empate', a + d, None, note)
-    for k in 'cyf':
+    for k in 'cyst':
         M = mu(k)
         if not M: continue
         tot = M[0] + M[1]; sd = math.sqrt(tot * PH[k]); base = math.floor(tot) + .5
         note = 'Esperado %s (%s %s · %s %s)' % (fm(round(tot, 2)), r['HomeTeam'], fm(round(M[0], 2)), r['AwayTeam'], fm(round(M[1], 2)))
         for L in (base - 1, base, base + 1):
             p = 1 - Phi((L - tot) / sd)
-            add(NM[k], 'Más de ' + fm(L), p, None, note); add(NM[k], 'Menos de ' + fm(L), 1 - p, None, note)
+            add(NM[k], 'Más de ' + fm(L), p, None, note, .2); add(NM[k], 'Menos de ' + fm(L), 1 - p, None, note, .2)
+        for team, m in ((r['HomeTeam'], M[0]), (r['AwayTeam'], M[1])):
+            sdt = math.sqrt(m * PH[k]); bt = math.floor(m) + .5
+            for L in (bt - 1, bt, bt + 1):
+                p = 1 - Phi((L - m) / sdt)
+                add(NMT[k] + ' · ' + team, 'Más de ' + fm(L), p, None, 'Esperado %s' % fm(round(m, 2)), .2); add(NMT[k] + ' · ' + team, 'Menos de ' + fm(L), 1 - p, None, 'Esperado %s' % fm(round(m, 2)), .2)
+        d = M[0] - M[1]; sdd = math.sqrt(tot * PH[k])
+        ph = 1 - Phi((.5 - d) / sdd); pa = Phi((-.5 - d) / sdd)
+        add(MOST[k], r['HomeTeam'], ph, None, note); add(MOST[k], 'Empate', max(0, 1 - ph - pa), None, note); add(MOST[k], r['AwayTeam'], pa, None, note)
     return out
+
+
+# ---------- Jugadores (opcional): API-Football, clave en GitHub Secrets (APIFOOTBALL_KEY) ----------
+AF = 'https://v3.football.api-sports.io'
+AFL = {140: 'LaLiga', 39: 'Premier League', 135: 'Serie A', 78: 'Bundesliga', 61: 'Ligue 1'}
+PL = [('Faltas cometidas (jugador)', 'fc', (1, 2)), ('Faltas recibidas (jugador)', 'fd', (1, 2)), ('Remates a puerta (jugador)', 'sot', (1,)),
+      ('Remates (jugador)', 'sh', (1, 2)), ('Tarjeta amarilla (jugador)', 'yc', (1,))]
+
+def af(path, key):
+    rq = urllib.request.Request(AF + path, headers={'x-apisports-key': key})
+    j = json.loads(urllib.request.urlopen(rq, timeout=40).read().decode())
+    er = j.get('errors')
+    if er and (er if isinstance(er, list) else list(er.values())): raise RuntimeError(str(er))
+    return j
+
+def norm(x):
+    x = unicodedata.normalize('NFKD', x).encode('ascii', 'ignore').decode().lower()
+    return ' '.join(w for w in re.sub(r'[^a-z0-9 ]', ' ', x).split() if w not in ('fc', 'cf', 'ac', 'as', 'sc', 'ssc', 'afc', 'de', 'rc', 'ud', 'cd'))
+
+def same(a, b):
+    a, b = norm(a), norm(b)
+    return a == b or a in b or b in a or any(len(w) >= 4 and w in b.split() for w in a.split())
+
+def squad(tid, season, key, cache):
+    c = cache.get(str(tid))
+    if c and time.time() - c['t'] < 7 * 86400: return c['p']
+    out = {}
+    for pg in (1, 2, 3):
+        j = af('/players?team=%s&season=%s&page=%d' % (tid, season, pg), key)
+        for x in j.get('response', []):
+            o = out.setdefault(x['player']['name'], dict(n=x['player']['name'], ap=0, mi=0, sh=0, sot=0, fc=0, fd=0, yc=0))
+            for st in x.get('statistics', []):
+                g = lambda v: v or 0
+                o['ap'] += g(st['games'].get('appearences')); o['mi'] += g(st['games'].get('minutes'))
+                o['sh'] += g(st['shots'].get('total')); o['sot'] += g(st['shots'].get('on'))
+                o['fc'] += g(st['fouls'].get('committed')); o['fd'] += g(st['fouls'].get('drawn')); o['yc'] += g(st['cards'].get('yellow'))
+        if pg >= (j.get('paging') or {}).get('total', 1): break
+    cache[str(tid)] = dict(t=time.time(), p=list(out.values()))
+    return cache[str(tid)]['p']
+
+def players(days, fdfix, res, key):
+    cache = json.load(open('players_cache.json')) if os.path.exists('players_cache.json') else {}
+    try:
+        for d in days:
+            for f in af('/fixtures?date=%s&timezone=Europe/Madrid' % d.isoformat(), key).get('response', []):
+                lg = f['league']['id']
+                if lg not in AFL or f['fixture']['status']['short'] != 'NS': continue
+                H, A = f['teams']['home'], f['teams']['away']
+                h, a = H['name'], A['name']
+                for fx in fdfix:
+                    if fx['d'] == d and same(fx['h'], h) and same(fx['a'], a): h, a = fx['h'], fx['a']; break
+                for tid, tn in ((H['id'], H['name']), (A['id'], A['name'])):
+                    sq = sorted([p for p in squad(tid, f['league']['season'], key, cache) if p['ap'] >= 8 and p['mi'] / p['ap'] >= 45], key=lambda p: -p['mi'])[:8]
+                    for p in sq:
+                        for mk, k, ks in PL:
+                            lam = p[k] / p['ap']
+                            for n in ks:
+                                pr = 1 - math.exp(-lam) * (1 + lam if n == 2 else 1)
+                                if .1 <= pr <= .9:
+                                    res[d.isoformat()].append(dict(h=h, a=a, lg=AFL[lg], t=f['fixture']['date'][11:16], mk=mk, s='%s (%s) – %d o más' % (p['name'] if 'name' in p else p['n'], tn, n),
+                                                                  p=round(pr, 4), r=None, n='Media %s por partido en %d partidos. Supone que juega.' % (fm(round(lam, 2)), p['ap'])))
+    except Exception as e:
+        print('jugadores:', e)
+    json.dump(cache, open('players_cache.json', 'w'))
+
+# ---------- Tenis ATP: modelo propio con historial (Jeff Sackmann, tennis_atp, CC BY-NC-SA) + partidos de The Odds API (ODDS_API_KEY) ----------
+SK = 'https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/'
+CLAY = ['roland', 'french', 'madrid', 'rome', 'italian', 'monte', 'barcelona', 'hamburg', 'bastad', 'gstaad', 'umag', 'kitzbuhel', 'bucharest', 'estoril', 'marrakech', 'houston', 'geneva', 'lyon', 'buenos', 'rio ', 'santiago', 'cordoba', 'bogota']
+GRASS = ['wimbledon', 'queen', 'halle', 'hertogenbosch', 'eastbourne', 'mallorca', 'newport']
+SLAM = ['australian', 'roland', 'french', 'wimbledon', 'us open']
+
+def tn(x):
+    x = unicodedata.normalize('NFKD', x).encode('ascii', 'ignore').decode().lower().replace('-', ' ')
+    return ' '.join(re.sub(r'[^a-z ]', ' ', x).split())
+
+def elo_data(y):
+    ms = []
+    for yr in (y - 2, y - 1, y):
+        for f in ('atp_matches_%d.csv', 'atp_matches_qual_chall_%d.csv'):
+            try:
+                rq = urllib.request.Request(SK + f % yr, headers={'User-Agent': 'Mozilla/5.0'})
+                ms += rows(urllib.request.urlopen(rq, timeout=60).read().decode('utf-8-sig', 'ignore'))
+            except Exception as e: print('historial', yr, f, e)
+    ms = [m for m in ms if m.get('winner_name') and m.get('loser_name') and m.get('tourney_date') and 'W/O' not in m.get('score', '')]
+    ms.sort(key=lambda m: (m['tourney_date'], int(m.get('match_num') or 0)))
+    R, S, hist, h2h, cnt = {}, {}, {}, {}, {}
+    for m in ms:
+        w, l, sf = tn(m['winner_name']), tn(m['loser_name']), m.get('surface') or ''
+        e = 1 / (1 + 10 ** ((R.get(l, 1500) - R.get(w, 1500)) / 400))
+        R[w] = R.get(w, 1500) + 32 * (1 - e); R[l] = R.get(l, 1500) - 32 * (1 - e)
+        if sf in ('Hard', 'Clay', 'Grass'):
+            e = 1 / (1 + 10 ** ((S.get((l, sf), 1500) - S.get((w, sf), 1500)) / 400))
+            S[(w, sf)] = S.get((w, sf), 1500) + 32 * (1 - e); S[(l, sf)] = S.get((l, sf), 1500) - 32 * (1 - e)
+            for p in (w, l): cnt[(p, sf)] = cnt.get((p, sf), 0) + 1
+        hist.setdefault(w, []).append(1); hist.setdefault(l, []).append(0)
+        pr = tuple(sorted((w, l))); h2h.setdefault(pr, [0, 0])[0 if w == pr[0] else 1] += 1
+    return R, S, hist, h2h, cnt
+
+def find(name, st):
+    R = st[0]; k = tn(name)
+    if k in R: return k
+    t = k.split()
+    c = [x for x in R if x.split()[-1:] == t[-1:] and x[:1] == k[:1]]
+    return c[0] if len(c) == 1 else None
+
+def predict(a, b, sf, bo5, st):
+    R, S, hist, h2h, cnt = st
+    if len(hist.get(a, [])) < 10 or len(hist.get(b, [])) < 10: return None
+    def comb(p):
+        w = min(cnt.get((p, sf), 0) / 30, 1) * .6
+        return (1 - w) * R[p] + w * S.get((p, sf), R[p]), S.get((p, sf))
+    (ca, sa), (cb, sb) = comb(a), comb(b)
+    pr = tuple(sorted((a, b))); hh = h2h.get(pr, [0, 0]); wa, wb = (hh[0], hh[1]) if a == pr[0] else (hh[1], hh[0])
+    d = ca - cb + 40 * (wa - wb) / (wa + wb + 3)
+    p = 1 / (1 + 10 ** (-d / (350 if bo5 else 400)))
+    fa, fb = sum(hist[a][-10:]), sum(hist[b][-10:])
+    note = 'Modelo (Elo): %d vs %d%s. Últimos 10: %d-%d vs %d-%d. Cara a cara: %d-%d.' % (
+        R[a], R[b], (' · en %s: %d vs %d' % (sf, sa, sb)) if sa and sb else '', fa, len(hist[a][-10:]) - fa, fb, len(hist[b][-10:]) - fb, wa, wb)
+    return p, note
+
+def tennis(days, key, res):
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo('Europe/Madrid'); now = dt.datetime.now(tz); base = 'https://api.the-odds-api.com/v4'
+        st = elo_data(now.year)
+        if sum(len(v) for v in st[2].values()) < 2000: print('tenis: historial insuficiente'); return
+        def q(p):
+            rq = urllib.request.Request(base + p + ('&' if '?' in p else '?') + 'apiKey=' + key, headers={'User-Agent': 'Mozilla/5.0'})
+            return json.loads(urllib.request.urlopen(rq, timeout=40).read().decode())
+        for sp in q('/sports'):
+            if not (sp.get('active') and sp['key'].startswith('tennis_atp')): continue
+            ti = (sp['title'] + ' ' + sp['key'].replace('_', ' ')).lower()
+            sf = 'Clay' if any(c in ti for c in CLAY) else 'Grass' if any(c in ti for c in GRASS) else 'Hard'; bo5 = any(c in ti for c in SLAM)
+            try: evs = q('/sports/%s/odds?regions=eu&markets=h2h&oddsFormat=decimal' % sp['key'])
+            except Exception as e: print('tenis', sp['key'], e); continue
+            for e in evs:
+                t = dt.datetime.fromisoformat(e['commence_time'].replace('Z', '+00:00')).astimezone(tz)
+                if t.date() not in days or t <= now: continue
+                A, B = e['home_team'], e['away_team']; ka, kb = find(A, st), find(B, st)
+                if not ka or not kb: print('tenis sin historial:', A, B); continue
+                pr = predict(ka, kb, sf, bo5, st)
+                if not pr: continue
+                pm, note = pr; ps = {A: [], B: []}; b365 = {}
+                for bk in e.get('bookmakers', []):
+                    for m in bk.get('markets', []):
+                        if m['key'] != 'h2h': continue
+                        o = {x['name']: x['price'] for x in m['outcomes']}
+                        if A in o and B in o and o[A] > 1 and o[B] > 1:
+                            z = 1 / o[A] + 1 / o[B]; ps[A].append(1 / o[A] / z); ps[B].append(1 / o[B] / z)
+                            if bk['key'] == 'bet365': b365 = o
+                mk = len(ps[A]) >= 3
+                for me, pmod in ((A, pm), (B, 1 - pm)):
+                    p = .7 * pmod + .3 * sum(ps[me]) / len(ps[me]) if mk else pmod
+                    if .08 <= p <= .96:
+                        res[t.date().isoformat()].append(dict(sp='tenis', h=A, a=B, lg=sp['title'], t=t.strftime('%H:%M'), mk='Ganador del partido', s=me, p=round(p, 4), r=b365.get(me),
+                            n=note + (' Mezcla 70%% modelo + 30%% mercado (%d casas).' % len(ps[me]) if mk else ' Solo modelo.') + ' Superficie supuesta: %s.' % sf))
+    except Exception as e:
+        print('tenis:', e)
 
 def main():
     today = dt.date.today(); days = [today + dt.timedelta(i) for i in range(3)]
     y = today.year if today.month >= 7 else today.year - 1
-    fx = rows(get('fixtures.csv')); res = {d.isoformat(): [] for d in days}
+    fx = rows(get('fixtures.csv')); res = {d.isoformat(): [] for d in days}; fdfix = []
     for div in LG:
         hist = []
         for s in (y - 1, y):
@@ -114,7 +282,12 @@ def main():
         for r in fx:
             if r.get('Div') != div or not r.get('Date'): continue
             d = pdate(r['Date'])
-            if d in days: res[d.isoformat()] += analyze(r, hist, div)
+            if d in days:
+                res[d.isoformat()] += analyze(r, hist, div); fdfix.append(dict(d=d, h=r['HomeTeam'], a=r['AwayTeam']))
+    key = os.environ.get('APIFOOTBALL_KEY', '').strip()
+    if key: players(days, fdfix, res, key)
+    tkey = os.environ.get('ODDS_API_KEY', '').strip()
+    if tkey: tennis(days, tkey, res)
     json.dump({'updated': dt.datetime.utcnow().isoformat() + 'Z', 'days': res}, open('data.json', 'w', encoding='utf-8'), ensure_ascii=False)
     print({k: len(v) for k, v in res.items()})
 

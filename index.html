@@ -22,24 +22,26 @@ input,select{width:100%;font:inherit;font-size:18px;padding:12px;border-radius:1
 <h1>BET<span>TARGET</span></h1>
 <label>¿CUÁNTO TIENES? (€)</label><input id="st" type="number" inputmode="decimal" value="20" min="1" step="any">
 <label>¿CUÁNTO QUIERES CONSEGUIR? (€)</label><input id="tg" type="number" inputmode="decimal" value="50" min="1" step="any">
+<label>¿DEPORTE?</label><div class="row" id="sp"><button data-s="futbol" class="on">⚽ FÚTBOL</button><button data-s="tenis">🎾 TENIS ATP</button></div>
 <label>¿CUÁNDO?</label><div class="row" id="days"><button data-d="0" class="on">HOY</button><button data-d="1">MAÑANA</button><button data-d="2">PASADO MAÑANA</button></div>
 <button class="go" id="go">BUSCAR</button>
 <div id="out"></div>
-<p class="w" id="up">Cargando datos…</p><p class="w">Análisis automático con los últimos 8 partidos de cada equipo en 17 ligas europeas (las 5 grandes, sus segundas divisiones, Países Bajos, Portugal, Bélgica, Turquía, Escocia y Grecia). La <b>cuota justa</b> es 1/probabilidad y <b>no es el precio de ninguna casa</b>: solo en 1X2 y goles se usa la cuota real de Bet365. Para córners, tarjetas y faltas, compara con la cuota real y no juegues si es menor.</p>
+<p class="w" id="up">Cargando datos…</p><p class="w">Análisis automático con los últimos 8 partidos de cada equipo en 17 ligas europeas (las 5 grandes, sus segundas divisiones, Países Bajos, Portugal, Bélgica, Turquía, Escocia y Grecia). La <b>cuota estimada</b> se calcula con la probabilidad y un margen típico del 6 % y <b>no es el precio de ninguna casa</b>: solo en 1X2 y goles se usa la cuota real de Bet365. Para córners, tarjetas y faltas, compara con la cuota real y no juegues si es menor.</p>
 <p class="w">⚠️ Herramienta de análisis estadístico: las probabilidades son estimaciones y no garantizan nada. No hay apuestas seguras ni ganancias aseguradas. No ejecuta apuestas. Juega con responsabilidad (+18). Ayuda: 900 200 225.</p>
 </main>
 <script>
 const $=s=>document.querySelector(s),eur=n=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(n),f2=n=>n.toFixed(2).replace('.',','),pc=n=>Math.round(n*100)+'%';
-let day=0,SEL=[],need=1,D=null;
+let sport='futbol',day=0,SEL=[],need=1,D=null;
+$('#sp').onclick=e=>{if(!e.target.dataset.s)return;sport=e.target.dataset.s;document.querySelectorAll('#sp button').forEach(b=>b.classList.toggle('on',b===e.target))};
 $('#days').onclick=e=>{if(!e.target.dataset.d)return;day=+e.target.dataset.d;document.querySelectorAll('#days button').forEach(b=>b.classList.toggle('on',b===e.target))};
 fetch('data.json?'+Date.now()).then(r=>r.json()).then(j=>{D=j;const h=(Date.now()-new Date(j.updated))/36e5;$('#up').textContent='Datos actualizados: '+new Date(j.updated).toLocaleString('es-ES')+(h>30?' ⚠ pueden estar desfasados':'')}).catch(()=>{$('#up').textContent='Aún no hay datos publicados.'});
-const vb=v=>v==null?['n','Cuota justa: compara con tu casa']:v>.03?['g','🟢 Posible valor estadístico']:v>=-.03?['y','🟡 Valor neutral']:['r','🔴 Poco valor estadístico'];
+const vb=v=>v==null?['n','Cuota estimada: compara con tu casa']:v>.03?['g','🟢 Posible valor estadístico']:v>=-.03?['y','🟡 Valor neutral']:['r','🔴 Poco valor estadístico'];
 $('#go').onclick=()=>{const st=+$('#st').value,tg=+$('#tg').value;
  if(!(st>0)||!(tg>st)){$('#out').innerHTML='<p class="e">El objetivo debe ser mayor que el dinero disponible.</p>';return}
  if(!D){$('#out').innerHTML='<p class="e">Aún no hay datos publicados.</p>';return}
  need=tg/st;const d=new Date();d.setDate(d.getDate()+day);const k=d.toLocaleDateString('sv-SE'),now=new Date(),nm=now.getHours()*60+now.getMinutes();
- SEL=(D.days[k]||[]).filter(x=>day>0||!x.t||(+x.t.slice(0,2)*60+ +x.t.slice(3))>nm).map(x=>({...x,eff:x.r||1/x.p,val:x.r?x.p*x.r-1:null}));
- if(!SEL.length){$('#out').innerHTML='<p class="e">No hay partidos con datos suficientes para ese día.</p>';return}draw(true)};
+ SEL=(D.days[k]||[]).filter(x=>(x.sp||'futbol')===sport).filter(x=>day>0||!x.t||(+x.t.slice(0,2)*60+ +x.t.slice(3))>nm).map(x=>({...x,eff:x.r||Math.max(1.01,1/(x.p*1.06)),val:x.r?x.p*x.r-1:null}));
+ if(!SEL.length){$('#out').innerHTML='<p class="e">No hay partidos de '+(sport==='tenis'?'tenis ATP':'fútbol')+' con datos suficientes para ese día.</p>';return}draw(true)};
 function bestCombo(){const by={};SEL.filter(x=>x.eff>=1.1).forEach(x=>(by[x.h+x.a]??=[]).push(x));
  const M=Object.values(by).map(v=>v.sort((a,b)=>b.p-a.p).slice(0,8)),hi=need*1.25,Q=50,K=n=>Math.round(Math.log(n)*Q);
  let S=new Map([['0:0',{o:1,l:0,a:[]}]]);
@@ -47,15 +49,15 @@ function bestCombo(){const by={};SEL.filter(x=>x.eff>=1.1).forEach(x=>(by[x.h+x.
  let B=null;for(const s of S.values())if(s.a.length&&s.o>=need&&s.o<=hi&&(!B||s.l>B.l))B=s;
  return B&&{a:B.a,o:B.o,p:B.a.reduce((t,x)=>t*x.p,1)}}
 function draw(first){const st=+$('#st').value,tg=+$('#tg').value;
- if(first){const mk=[...new Set(SEL.map(x=>x.mk))];$('#out').innerHTML=`<div class="card" style="text-align:center"><span class="n">Cuota necesaria</span><div style="font-size:28px;font-weight:800;color:var(--ac)">${f2(need)}</div></div><div id="bc"></div>
+ if(first){const mk=[...new Set(SEL.map(x=>x.mk.split(' · ')[0]))];$('#out').innerHTML=`<div class="card" style="text-align:center"><span class="n">Cuota necesaria</span><div style="font-size:28px;font-weight:800;color:var(--ac)">${f2(need)}</div></div><div id="bc"></div>
  <div class="flt"><select id="so"><option value="n">Ordenar: cercanía al objetivo</option><option value="p">Mayor probabilidad</option><option value="v">Mejor valor (cuota real)</option></select><select id="fm"><option value="">Mercado: todos</option>${mk.map(m=>`<option>${m}</option>`).join('')}</select></div><div id="ls"></div>`;
   $('#so').oninput=$('#fm').oninput=()=>draw();
   const B=bestCombo();$('#bc').innerHTML=B?`<div class="card best"><b>🎯 Mi recomendación para tu objetivo</b><p class="w" style="margin:4px 0">La combinación más probable según los datos con cuota entre ${f2(need)} y ${f2(need*1.25)}. No es segura: nada lo es.</p>${B.p<.1?`<p class="w e">⚠ Con cuotas tan altas la probabilidad de acertar todo es muy baja (${pc(B.p)}). Cuanto mayor es la cuota, más selecciones hacen falta y más fácil es fallar.</p>`:''}${B.a.map(x=>`<div class="l"><span>${x.h} – ${x.a} · ${x.t}<small>${x.mk}: <b>${x.s}</b> · ${pc(x.p)}</small></span><b>${f2(x.eff)}${x.r?'':'*'}</b></div>`).join('')}
   <div class="l"><span>Cuota total</span><b>${f2(B.o)}</b></div><div class="l"><span>Cantidad necesaria para ${eur(tg)}</span><b>${eur(tg/B.o)}</b></div><div class="l"><span>Retorno con ${eur(st)}</span><b>${eur(st*B.o)}</b></div><div class="l"><span>Beneficio potencial</span><b>${eur(st*B.o-st)}</b></div><div class="l"><span>Probabilidad estimada</span><b>${pc(B.p)}</b></div>
-  <p class="w">* Cuota justa (1/prob.), no es el precio real de la casa: revísalo antes de decidir.</p></div>`:`<p class="n">No hay partidos suficientes ese día para llegar a la cuota ${f2(need)}. Prueba otro día o un objetivo menor.</p>`}
- const so=$('#so').value,fm=$('#fm').value;let L=SEL.filter(x=>!fm||x.mk===fm);
+  <p class="w">* Cuota estimada (con un margen típico del 6 %), no es el precio real de la casa: revísala antes de decidir.</p></div>`:`<p class="n">No hay partidos suficientes ese día para llegar a la cuota ${f2(need)}. Prueba otro día o un objetivo menor.</p>`}
+ const so=$('#so').value,fm=$('#fm').value;let L=SEL.filter(x=>!fm||x.mk.split(' · ')[0]===fm);
  L.sort({n:(a,b)=>Math.abs(a.eff-need)-Math.abs(b.eff-need)||b.p-a.p,p:(a,b)=>b.p-a.p,v:(a,b)=>(b.val??-9)-(a.val??-9)}[so]);
- $('#ls').innerHTML=`<p class="n">${L.length} opciones (mostrando 30)</p>`+L.slice(0,30).map(x=>{const[c,t]=vb(x.val),ret=st*x.eff;return`<div class="card"><div class="top"><span>⚽ ${x.lg}</span><span>${x.t}</span></div><div class="ev">${x.h} – ${x.a}</div><div class="sel">${x.mk}: <b>${x.s}</b></div>
- <div class="st"><div>Prob. estimada<b>${pc(x.p)}</b></div><div>Cuota justa<b>${f2(1/x.p)}</b></div><div>Cuota real<b>${x.r?f2(x.r):'—'}</b></div><div>Retorno<b>${eur(ret)}</b></div><div>Beneficio<b>${eur(ret-st)}</b></div><div>Vs objetivo<b class="${ret>=tg?'g':'r'}">${(ret>=tg?'+':'')+eur(ret-tg)}</b></div></div>
+ $('#ls').innerHTML=`<p class="n">${L.length} opciones (mostrando 30)</p>`+L.slice(0,30).map(x=>{const[c,t]=vb(x.val),ret=st*x.eff;return`<div class="card"><div class="top"><span>${x.sp==='tenis'?'🎾':'⚽'} ${x.lg}</span><span>${x.t}</span></div><div class="ev">${x.h} – ${x.a}</div><div class="sel">${x.mk}: <b>${x.s}</b></div>
+ <div class="st"><div>Prob. estimada<b>${pc(x.p)}</b></div><div>Cuota estimada<b>${f2(x.eff)}</b></div><div>Cuota real<b>${x.r?f2(x.r):'—'}</b></div><div>Retorno<b>${eur(ret)}</b></div><div>Beneficio<b>${eur(ret-st)}</b></div><div>Vs objetivo<b class="${ret>=tg?'g':'r'}">${(ret>=tg?'+':'')+eur(ret-tg)}</b></div></div>
  <div class="bd ${c}">${t}</div><div class="sel">${x.n}</div></div>`}).join('')}
 </script></body></html>
