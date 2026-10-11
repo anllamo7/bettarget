@@ -230,29 +230,37 @@ def predict(a, b, sf, bo5, st):
         R[a], R[b], (' · en %s: %d vs %d' % (sf, sa, sb)) if sa and sb else '', fa, len(hist[a][-10:]) - fa, fb, len(hist[b][-10:]) - fb, wa, wb)
     return p, note
 
+DIAG = {}
+
 def tennis(days, key, res):
+    D = DIAG.setdefault('tenis', {'torneos': [], 'historial': 0, 'error': ''})
     try:
         from zoneinfo import ZoneInfo
         tz = ZoneInfo('Europe/Madrid'); now = dt.datetime.now(tz); base = 'https://api.the-odds-api.com/v4'
-        st = elo_data(now.year)
-        if sum(len(v) for v in st[2].values()) < 2000: print('tenis: historial insuficiente'); return
+        st = elo_data(now.year); D['historial'] = sum(len(v) for v in st[2].values())
+        if D['historial'] < 2000: st = None
         def q(p):
             rq = urllib.request.Request(base + p + ('&' if '?' in p else '?') + 'apiKey=' + key, headers={'User-Agent': 'Mozilla/5.0'})
             return json.loads(urllib.request.urlopen(rq, timeout=40).read().decode())
         for sp in q('/sports'):
-            if not (sp.get('active') and sp['key'].startswith('tennis_atp')): continue
-            ti = (sp['title'] + ' ' + sp['key'].replace('_', ' ')).lower()
+            if not sp['key'].startswith('tennis_atp'): continue
+            ti = (sp['title'] + ' ' + sp['key'].replace('_', ' ')).lower(); mm = int(any(c in ti for c in MASTERS))
+            info = {'t': sp['title'], 'activo': bool(sp.get('active')), 'eventos': 0, 'en_3_dias': 0, 'sin_datos': 0, 'añadidos': 0}
+            if sp.get('active') or mm: D['torneos'].append(info)
+            if not sp.get('active'): continue
             sf = 'Clay' if any(c in ti for c in CLAY) else 'Grass' if any(c in ti for c in GRASS) else 'Hard'; bo5 = any(c in ti for c in SLAM)
             try: evs = q('/sports/%s/odds?regions=eu&markets=h2h&oddsFormat=decimal' % sp['key'])
-            except Exception as e: print('tenis', sp['key'], e); continue
+            except Exception as e: print('tenis', sp['key'], e); info['error'] = str(e)[:80]; continue
             for e in evs:
+                info['eventos'] += 1
                 t = dt.datetime.fromisoformat(e['commence_time'].replace('Z', '+00:00')).astimezone(tz)
                 if t.date() not in days or t <= now: continue
-                A, B = e['home_team'], e['away_team']; ka, kb = find(A, st), find(B, st)
-                if not ka or not kb: print('tenis sin historial:', A, B); continue
-                pr = predict(ka, kb, sf, bo5, st)
-                if not pr: continue
-                pm, note = pr; ps = {A: [], B: []}; b365 = {}
+                info['en_3_dias'] += 1
+                A, B = e['home_team'], e['away_team']; pr = None
+                if st:
+                    ka, kb = find(A, st), find(B, st)
+                    if ka and kb: pr = predict(ka, kb, sf, bo5, st)
+                ps = {A: [], B: []}; b365 = {}
                 for bk in e.get('bookmakers', []):
                     for m in bk.get('markets', []):
                         if m['key'] != 'h2h': continue
@@ -260,14 +268,17 @@ def tennis(days, key, res):
                         if A in o and B in o and o[A] > 1 and o[B] > 1:
                             z = 1 / o[A] + 1 / o[B]; ps[A].append(1 / o[A] / z); ps[B].append(1 / o[B] / z)
                             if bk['key'] == 'bet365': b365 = o
-                mk = len(ps[A]) >= 3
-                for me, pmod in ((A, pm), (B, 1 - pm)):
-                    p = .7 * pmod + .3 * sum(ps[me]) / len(ps[me]) if mk else pmod
+                nb = len(ps[A])
+                if not pr and nb < 2: info['sin_datos'] += 1; continue
+                for me, pm in ((A, pr[0] if pr else None), (B, 1 - pr[0] if pr else None)):
+                    mkt = sum(ps[me]) / nb if nb else None
+                    p = pm if mkt is None else mkt if pm is None else (.7 * pm + .3 * mkt if nb >= 3 else pm)
+                    nt = (pr[1] if pr else 'Sin historial suficiente de algún jugador.') + (' Mezcla 70%% modelo + 30%% mercado (%d casas).' % nb if pr and nb >= 3 else ' Solo modelo.' if pr else ' Solo mercado (%d casas).' % nb) + ' Superficie supuesta: %s.' % sf
                     if .08 <= p <= .96:
-                        res[t.date().isoformat()].append(dict(sp='tenis', mm=int(any(c in ti for c in MASTERS)), h=A, a=B, lg=sp['title'] + (' · Masters 1000' if any(c in ti for c in MASTERS) else ''), t=t.strftime('%H:%M'), mk='Ganador del partido', s=me, p=round(p, 4), r=b365.get(me),
-                            n=note + (' Mezcla 70%% modelo + 30%% mercado (%d casas).' % len(ps[me]) if mk else ' Solo modelo.') + ' Superficie supuesta: %s.' % sf))
+                        res[t.date().isoformat()].append(dict(sp='tenis', mm=mm, h=A, a=B, lg=sp['title'] + (' · Masters 1000' if mm else ''), t=t.strftime('%H:%M'), mk='Ganador del partido', s=me, p=round(p, 4), r=b365.get(me), n=nt))
+                        info['añadidos'] += 1
     except Exception as e:
-        print('tenis:', e)
+        print('tenis:', e); D['error'] = str(e)[:120]
 
 # ---------- Simulación y aprendizaje ----------
 MASTERS = ['indian wells', 'miami', 'monte', 'madrid', 'rome', 'italian', 'canad', 'toronto', 'montreal', 'cincinnati', 'shanghai', 'paris']
@@ -426,7 +437,7 @@ def main():
     if tkey: tennis(days, tkey, res)
     try: sim = simulate(res, days, RES, tkey)
     except Exception as e: print('simulación:', e); sim = {}
-    json.dump({'updated': dt.datetime.utcnow().isoformat() + 'Z', 'days': res, 'sim': sim}, open('data.json', 'w', encoding='utf-8'), ensure_ascii=False)
+    json.dump({'updated': dt.datetime.utcnow().isoformat() + 'Z', 'days': res, 'sim': sim, 'diag': DIAG}, open('data.json', 'w', encoding='utf-8'), ensure_ascii=False)
     print({k: len(v) for k, v in res.items()})
 
 if __name__ == '__main__': main()
