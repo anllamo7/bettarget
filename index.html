@@ -20,12 +20,15 @@ input,select{width:100%;font:inherit;font-size:18px;padding:12px;border-radius:1
 .w{font-size:12px;color:var(--mu);margin:12px 0}.e{color:var(--r);font-weight:700}
 </style></head><body><main>
 <h1>BET<span>TARGET</span></h1>
+<div class="row" id="tabs"><button data-t="b" class="on">🔎 BUSCAR</button><button data-t="s">🧪 SIMULACIÓN</button></div>
+<div id="bv">
 <label>¿CUÁNTO TIENES? (€)</label><input id="st" type="number" inputmode="decimal" value="20" min="1" step="any">
 <label>¿CUÁNTO QUIERES CONSEGUIR? (€)</label><input id="tg" type="number" inputmode="decimal" value="50" min="1" step="any">
 <label>¿DEPORTE?</label><div class="row" id="sp"><button data-s="futbol" class="on">⚽ FÚTBOL</button><button data-s="tenis">🎾 TENIS ATP</button></div>
 <label>¿CUÁNDO?</label><div class="row" id="days"><button data-d="0" class="on">HOY</button><button data-d="1">MAÑANA</button><button data-d="2">PASADO MAÑANA</button></div>
 <button class="go" id="go">BUSCAR</button>
 <div id="out"></div>
+</div><div id="simv" style="display:none"></div>
 <p class="w" id="up">Cargando datos…</p><p class="w">Análisis automático con los últimos 8 partidos de cada equipo en 17 ligas europeas (las 5 grandes, sus segundas divisiones, Países Bajos, Portugal, Bélgica, Turquía, Escocia y Grecia). La <b>cuota estimada</b> se calcula con la probabilidad y un margen típico del 6 % y <b>no es el precio de ninguna casa</b>: solo en 1X2 y goles se usa la cuota real de Bet365. Para córners, tarjetas y faltas, compara con la cuota real y no juegues si es menor.</p>
 <p class="w">⚠️ Herramienta de análisis estadístico: las probabilidades son estimaciones y no garantizan nada. No hay apuestas seguras ni ganancias aseguradas. No ejecuta apuestas. Juega con responsabilidad (+18). Ayuda: 900 200 225.</p>
 </main>
@@ -60,4 +63,18 @@ function draw(first){const st=+$('#st').value,tg=+$('#tg').value;
  $('#ls').innerHTML=`<p class="n">${L.length} opciones (mostrando 30)</p>`+L.slice(0,30).map(x=>{const[c,t]=vb(x.val),ret=st*x.eff;return`<div class="card"><div class="top"><span>${x.sp==='tenis'?'🎾':'⚽'} ${x.lg}</span><span>${x.t}</span></div><div class="ev">${x.h} – ${x.a}</div><div class="sel">${x.mk}: <b>${x.s}</b></div>
  <div class="st"><div>Prob. estimada<b>${pc(x.p)}</b></div><div>Cuota estimada<b>${f2(x.eff)}</b></div><div>Cuota real<b>${x.r?f2(x.r):'—'}</b></div><div>Retorno<b>${eur(ret)}</b></div><div>Beneficio<b>${eur(ret-st)}</b></div><div>Vs objetivo<b class="${ret>=tg?'g':'r'}">${(ret>=tg?'+':'')+eur(ret-tg)}</b></div></div>
  <div class="bd ${c}">${t}</div><div class="sel">${x.n}</div></div>`}).join('')}
+
+$('#tabs').onclick=e=>{const t=e.target.dataset.t;if(!t)return;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b===e.target));$('#bv').style.display=t==='b'?'':'none';$('#simv').style.display=t==='s'?'':'none';if(t==='s')simu()};
+function simu(){const S=D&&D.sim,el=$('#simv');
+ if(!S||!S.bets||!S.bets.length){el.innerHTML='<div class="card"><p class="n">Aún no hay simulaciones. Se empiezan a registrar con las próximas actualizaciones automáticas.</p></div>';return}
+ const ic={win:'✅',loss:'❌',pend:'⏳',void:'⚪'},prof=b=>b.status==='win'?b.stake*(b.odds-1):-b.stake,done=S.bets.filter(b=>b.status==='win'||b.status==='loss');
+ const blk=(t,L)=>{const w=L.filter(b=>b.status==='win').length,p=L.reduce((a,b)=>a+prof(b),0),st=L.length*10;return`<div class="l"><span>${t}</span><span>${L.length?`${w}/${L.length} ganadas · <b class="${p>=0?'g':'r'}">${p>=0?'+':''}${eur(p)}</b> (${Math.round(p/st*100)}%)`:'sin resultados aún'}</span></div>`};
+ const SP={futbol:'⚽ Fútbol',tenis:'🎾 Tenis'};
+ let o=`<div class="card"><b>🧪 Apuestas simuladas de 10 €</b><p class="w" style="margin:4px 0">Cada día se simula la mejor combinación a cuota ≈2 y ≈5 en fútbol y tenis, y cuando se juegan los partidos se comprueba si se habría ganado. Dinero ficticio.</p>`+blk('Total',done)+['futbol','tenis'].flatMap(s=>[2,5].map(t=>blk(SP[s]+' · cuota ≈'+t,done.filter(b=>b.sp===s&&b.target===t)))).join('')+`<p class="w">Pendientes: ${S.bets.filter(b=>b.status==='pend').length}</p></div>`;
+ o+=`<div class="card"><b>Últimas simulaciones</b>`+S.bets.slice(-20).reverse().map(b=>`<div class="l" style="display:block"><b>${ic[b.status]} ${b.date} · ${SP[b.sp]} · cuota ${f2(b.odds)} · prob. ${pc(b.p)}</b>${b.legs.map(l=>`<small style="display:block;color:var(--mu)">${l.ok===true?'✅':l.ok===false?'❌':'⏳'} ${l.h} – ${l.a} · ${l.mk}: ${l.s} @ ${f2(l.eff)}</small>`).join('')}</div>`).join('')+`</div>`;
+ const B=S.bk||{};o+=`<div class="card"><b>¿Acierta lo que dice? (probabilidad prevista → real)</b>`+(Object.keys(B).length?Object.entries(B).map(([sp,bs])=>`<p class="w" style="margin:8px 0 2px"><b>${SP[sp]||sp}</b></p>`+Object.entries(bs).sort((a,b)=>a[0]-b[0]).map(([k,v])=>`<div class="l"><span>${k*10}-${k*10+10}%</span><span>previsto ${pc(v[2]/v[0])} → real <b>${pc(v[1]/v[0])}</b> · ${v[0]} casos</span></div>`).join('')).join(''):'<p class="n">Todavía sin resultados suficientes.</p>')+`</div>`;
+ const F=Object.entries(S.factors||{}).sort((a,b)=>Math.abs(b[1]-1)-Math.abs(a[1]-1)).slice(0,8);
+ o+=`<div class="card"><b>Ajustes aprendidos</b><p class="w" style="margin:4px 0">Cuando un tipo de mercado acumula 30 casos, sus probabilidades se corrigen hasta ±20 % según lo que ha ocurrido de verdad.</p>`+(F.length?F.map(([k,v])=>`<div class="l"><span>${k.replace(/\|/g,' · ')}</span><b class="${v>=1?'g':'r'}">×${f2(v)}</b></div>`).join(''):'<p class="n">Aún no hay datos suficientes para ajustar.</p>')+`</div>`;
+ o+=`<p class="w">Los resultados de fútbol se registran cuando la fuente los publica (puede tardar días) y los de tenis solo si la API los devuelve. Con pocos casos los porcentajes no son fiables: hacen falta semanas. Una simulación pasada no garantiza resultados futuros.</p>`;
+ el.innerHTML=o}
 </script></body></html>

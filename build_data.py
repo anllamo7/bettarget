@@ -264,21 +264,157 @@ def tennis(days, key, res):
                 for me, pmod in ((A, pm), (B, 1 - pm)):
                     p = .7 * pmod + .3 * sum(ps[me]) / len(ps[me]) if mk else pmod
                     if .08 <= p <= .96:
-                        res[t.date().isoformat()].append(dict(sp='tenis', h=A, a=B, lg=sp['title'], t=t.strftime('%H:%M'), mk='Ganador del partido', s=me, p=round(p, 4), r=b365.get(me),
+                        res[t.date().isoformat()].append(dict(sp='tenis', h=A, a=B, lg=sp['title'] + (' · Masters 1000' if any(c in ti for c in MASTERS) else ''), t=t.strftime('%H:%M'), mk='Ganador del partido', s=me, p=round(p, 4), r=b365.get(me),
                             n=note + (' Mezcla 70%% modelo + 30%% mercado (%d casas).' % len(ps[me]) if mk else ' Solo modelo.') + ' Superficie supuesta: %s.' % sf))
     except Exception as e:
         print('tenis:', e)
 
+# ---------- Simulación y aprendizaje ----------
+MASTERS = ['indian wells', 'miami', 'monte', 'madrid', 'rome', 'italian', 'canad', 'toronto', 'montreal', 'cincinnati', 'shanghai', 'paris']
+STAT = {'Córners': ('HC', 'AC'), 'Remates a puerta': ('HST', 'AST'), 'Remates': ('HS', 'AS')}
+MOSTK = {'Más córners': 'Córners', 'Más tarjetas': 'Tarjetas', 'Más remates a puerta': 'Remates a puerta', 'Más remates': 'Remates'}
+
+def sstat(row, k):
+    if k == 'Tarjetas': return n(row.get('HY')) + n(row.get('HR') or 0), n(row.get('AY')) + n(row.get('AR') or 0)
+    a, b = STAT[k]; return n(row.get(a)), n(row.get(b))
+
+def lnum(s): return float(re.search(r'\d+(?:[,.]\d+)?', s).group().replace(',', '.'))
+
+def outcome_f(e, row):
+    mk, s = e['mk'], e['s']; H, A = row['HomeTeam'], row['AwayTeam']; hg, ag = n(row.get('FTHG')), n(row.get('FTAG'))
+    if math.isnan(hg + ag): return None
+    if mk.startswith('Resultado final'): return s == (H if hg > ag else A if ag > hg else 'Empate')
+    if mk.startswith('Más/Menos 2,5'): return (hg + ag > 2.5) == s.startswith('Más')
+    if mk.startswith('Ambos'): return (hg > 0 and ag > 0) == (s == 'Sí')
+    if mk.startswith('Doble'): return (hg >= ag) if s.startswith('1X') else (ag >= hg)
+    base = mk.split(' · ')[0]
+    try:
+        if base in MOSTK:
+            a, b = sstat(row, MOSTK[base])
+            if math.isnan(a + b): return None
+            return s == (H if a > b else A if b > a else 'Empate')
+        for k in ('Remates a puerta', 'Córners', 'Tarjetas', 'Remates'):
+            if base == k + ' totales' or base == k + ' de equipo':
+                a, b = sstat(row, k)
+                if math.isnan(a + b): return None
+                v = a + b if base.endswith('totales') else (a if mk.split(' · ')[1] == H else b)
+                return (v > lnum(s)) == s.startswith('Más')
+    except Exception: return None
+    return None
+
+def tennis_scores(key):
+    out = {}
+    try:
+        base = 'https://api.the-odds-api.com/v4'
+        def q(p):
+            rq = urllib.request.Request(base + p + ('&' if '?' in p else '?') + 'apiKey=' + key, headers={'User-Agent': 'Mozilla/5.0'})
+            return json.loads(urllib.request.urlopen(rq, timeout=40).read().decode())
+        for sp in q('/sports'):
+            if not (sp.get('active') and sp['key'].startswith('tennis_atp')): continue
+            try:
+                for g in q('/sports/%s/scores?daysFrom=3' % sp['key']):
+                    if not (g.get('completed') and g.get('scores')): continue
+                    sc = {tn(x['name']): n(x['score']) for x in g['scores']}
+                    if len(sc) == 2 and not any(math.isnan(v) for v in sc.values()) and len(set(sc.values())) == 2:
+                        out[frozenset(sc)] = max(sc, key=sc.get)
+            except Exception as e: print('scores', sp['key'], e)
+    except Exception as e: print('scores:', e)
+    return out
+
+def fam(e):
+    sx = e['s']; d = 'M' if 'Más de' in sx else 'm' if 'Menos de' in sx else ''
+    return '%s|%s|%s' % (e.get('sp', 'futbol'), e['mk'].split(' · ')[0], d)
+
+def eff(e): return e.get('r') or max(1.01, 1 / (e['p'] * 1.06))
+
+def combo(L, need):
+    by = {}
+    for x in L:
+        if eff(x) >= 1.1: by.setdefault(x['h'] + x['a'], []).append(x)
+    M = [sorted(v, key=lambda x: -x['p'])[:8] for v in by.values()]; hi = need * 1.25
+    S = {(0, 0): (1.0, 0.0, [])}
+    for c in M:
+        N = dict(S)
+        for o, l, a in list(S.values()):
+            if len(a) >= 10: continue
+            for x in c:
+                o2 = o * eff(x)
+                if o2 > hi: continue
+                l2 = l + math.log(x['p']) - .03; k = (len(a) + 1, round(math.log(o2) * 50))
+                if k not in N or l2 > N[k][1]: N[k] = (o2, l2, a + [x])
+        S = N
+    B = None
+    for o, l, a in S.values():
+        if a and need <= o <= hi and (B is None or l > B[1]): B = (o, l, a)
+    return B
+
+def simulate(res, days, RES, tkey):
+    import hashlib
+    from zoneinfo import ZoneInfo
+    try: sim = json.load(open('data.json', encoding='utf-8')).get('sim') or {}
+    except Exception: sim = {}
+    for k, v in (('bets', []), ('cal', []), ('seen', []), ('stats', {}), ('bk', {})): sim.setdefault(k, v)
+    today = days[0]; age = lambda d: (today - dt.date.fromisoformat(d)).days
+    pend_t = any(x.get('sp') == 'tenis' for x in sim['cal']) or any(l.get('sp') == 'tenis' and l.get('ok') is None for b in sim['bets'] if b['status'] == 'pend' for l in b['legs'])
+    TS = tennis_scores(tkey) if tkey and pend_t else {}
+    def out(e, d):
+        if e.get('sp') == 'tenis':
+            w = TS.get(frozenset((tn(e['h']), tn(e['a'])))); return None if w is None else tn(e['s']) == w
+        row = RES.get((e['h'], e['a'], d)); return None if row is None else outcome_f(e, row)
+    keep = []
+    for c in sim['cal']:
+        o = out(c, c['d'])
+        if o is None:
+            if age(c['d']) <= 14: keep.append(c)
+            continue
+        sp = c.get('sp', 'futbol'); st = sim['stats'].setdefault(fam(c), [0, 0, 0.0]); st[0] += 1; st[1] += int(o); st[2] += c['p0']
+        bb = sim['bk'].setdefault(sp, {}).setdefault(str(min(9, int(c['p0'] * 10))), [0, 0, 0.0]); bb[0] += 1; bb[1] += int(o); bb[2] += c['p0']
+    sim['cal'] = keep
+    for b in sim['bets']:
+        if b['status'] != 'pend': continue
+        for l in b['legs']:
+            if l.get('ok') is None: l['ok'] = out(l, b['date'])
+        if any(l['ok'] is False for l in b['legs']): b['status'] = 'loss'
+        elif all(l['ok'] is True for l in b['legs']): b['status'] = 'win'
+        elif age(b['date']) > 14: b['status'] = 'void'
+    F = {k: round(max(.8, min(1.2, (h + 10) / (ps + 10))), 3) for k, (n_, h, ps) in sim['stats'].items() if n_ >= 30}
+    sim['factors'] = F
+    nowm = dt.datetime.now(ZoneInfo('Europe/Madrid')).strftime('%H:%M')
+    for d, L in res.items():
+        for e in L:
+            e['p0'] = e['p']; f = F.get(fam(e))
+            if f: e['p'] = round(min(.97, max(.02, e['p'] * f)), 4)
+    seen = set(sim['seen'])
+    for d, L in res.items():
+        for e in L:
+            if d == today.isoformat() and e.get('t') and e['t'] <= nowm: continue
+            idk = '|'.join((d, e['h'], e['a'], e['mk'], e['s']))
+            if idk in seen or int(hashlib.md5(idk.encode()).hexdigest()[:6], 16) % 30: continue
+            seen.add(idk); sim['seen'].append(idk)
+            sim['cal'].append(dict(d=d, sp=e.get('sp', 'futbol'), h=e['h'], a=e['a'], mk=e['mk'], s=e['s'], p0=e['p0']))
+    sim['seen'] = sim['seen'][-6000:]
+    L0 = [e for e in res.get(today.isoformat(), []) if not e.get('t') or e['t'] > nowm]
+    for sp in ('futbol', 'tenis'):
+        for tg in (2, 5):
+            bid = '%s|%s|%d' % (today.isoformat(), sp, tg)
+            if any(b['id'] == bid for b in sim['bets']): continue
+            B = combo([e for e in L0 if e.get('sp', 'futbol') == sp], tg)
+            if B: sim['bets'].append(dict(id=bid, date=today.isoformat(), sp=sp, target=tg, stake=10, odds=round(B[0], 2), p=round(math.prod(x['p'] for x in B[2]), 4), status='pend',
+                legs=[dict(sp=sp, h=x['h'], a=x['a'], mk=x['mk'], s=x['s'], eff=round(eff(x), 2), p=x['p'], ok=None) for x in B[2]]))
+    sim['bets'] = sim['bets'][-300:]
+    return sim
+
 def main():
     today = dt.date.today(); days = [today + dt.timedelta(i) for i in range(3)]
     y = today.year if today.month >= 7 else today.year - 1
-    fx = rows(get('fixtures.csv')); res = {d.isoformat(): [] for d in days}; fdfix = []
+    fx = rows(get('fixtures.csv')); res = {d.isoformat(): [] for d in days}; fdfix = []; RES = {}
     for div in LG:
         hist = []
         for s in (y - 1, y):
             try: hist += rows(get('mmz4281/%02d%02d/%s.csv' % (s % 100, (s + 1) % 100, div)))
             except Exception as e: print('sin', div, s, e)
         hist = sorted([x for x in hist if x.get('FTHG') and x.get('Date')], key=lambda x: pdate(x['Date']))
+        for x in hist: RES[(x['HomeTeam'], x['AwayTeam'], pdate(x['Date']).isoformat())] = x
         for r in fx:
             if r.get('Div') != div or not r.get('Date'): continue
             d = pdate(r['Date'])
@@ -288,7 +424,9 @@ def main():
     if key: players(days, fdfix, res, key)
     tkey = os.environ.get('ODDS_API_KEY', '').strip()
     if tkey: tennis(days, tkey, res)
-    json.dump({'updated': dt.datetime.utcnow().isoformat() + 'Z', 'days': res}, open('data.json', 'w', encoding='utf-8'), ensure_ascii=False)
+    try: sim = simulate(res, days, RES, tkey)
+    except Exception as e: print('simulación:', e); sim = {}
+    json.dump({'updated': dt.datetime.utcnow().isoformat() + 'Z', 'days': res, 'sim': sim}, open('data.json', 'w', encoding='utf-8'), ensure_ascii=False)
     print({k: len(v) for k, v in res.items()})
 
 if __name__ == '__main__': main()
