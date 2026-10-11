@@ -264,7 +264,7 @@ def tennis(days, key, res):
                 for me, pmod in ((A, pm), (B, 1 - pm)):
                     p = .7 * pmod + .3 * sum(ps[me]) / len(ps[me]) if mk else pmod
                     if .08 <= p <= .96:
-                        res[t.date().isoformat()].append(dict(sp='tenis', h=A, a=B, lg=sp['title'] + (' · Masters 1000' if any(c in ti for c in MASTERS) else ''), t=t.strftime('%H:%M'), mk='Ganador del partido', s=me, p=round(p, 4), r=b365.get(me),
+                        res[t.date().isoformat()].append(dict(sp='tenis', mm=int(any(c in ti for c in MASTERS)), h=A, a=B, lg=sp['title'] + (' · Masters 1000' if any(c in ti for c in MASTERS) else ''), t=t.strftime('%H:%M'), mk='Ganador del partido', s=me, p=round(p, 4), r=b365.get(me),
                             n=note + (' Mezcla 70%% modelo + 30%% mercado (%d casas).' % len(ps[me]) if mk else ' Solo modelo.') + ' Superficie supuesta: %s.' % sf))
     except Exception as e:
         print('tenis:', e)

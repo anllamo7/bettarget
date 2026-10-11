@@ -24,7 +24,7 @@ input,select{width:100%;font:inherit;font-size:18px;padding:12px;border-radius:1
 <div id="bv">
 <label>¿CUÁNTO TIENES? (€)</label><input id="st" type="number" inputmode="decimal" value="20" min="1" step="any">
 <label>¿CUÁNTO QUIERES CONSEGUIR? (€)</label><input id="tg" type="number" inputmode="decimal" value="50" min="1" step="any">
-<label>¿DEPORTE?</label><div class="row" id="sp"><button data-s="futbol" class="on">⚽ FÚTBOL</button><button data-s="tenis">🎾 TENIS ATP</button></div>
+<label>¿DEPORTE?</label><div class="row" id="sp"><button data-s="futbol" class="on">⚽ FÚTBOL</button><button data-s="tenis">🎾 ATP</button><button data-s="masters">🏆 MASTERS 1000</button></div>
 <label>¿CUÁNDO?</label><div class="row" id="days"><button data-d="0" class="on">HOY</button><button data-d="1">MAÑANA</button><button data-d="2">PASADO MAÑANA</button></div>
 <button class="go" id="go">BUSCAR</button>
 <div id="out"></div>
@@ -43,8 +43,8 @@ $('#go').onclick=()=>{const st=+$('#st').value,tg=+$('#tg').value;
  if(!(st>0)||!(tg>st)){$('#out').innerHTML='<p class="e">El objetivo debe ser mayor que el dinero disponible.</p>';return}
  if(!D){$('#out').innerHTML='<p class="e">Aún no hay datos publicados.</p>';return}
  need=tg/st;const d=new Date();d.setDate(d.getDate()+day);const k=d.toLocaleDateString('sv-SE'),now=new Date(),nm=now.getHours()*60+now.getMinutes();
- SEL=(D.days[k]||[]).filter(x=>(x.sp||'futbol')===sport).filter(x=>day>0||!x.t||(+x.t.slice(0,2)*60+ +x.t.slice(3))>nm).map(x=>({...x,eff:x.r||Math.max(1.01,1/(x.p*1.06)),val:x.r?x.p*x.r-1:null}));
- if(!SEL.length){$('#out').innerHTML='<p class="e">No hay partidos de '+(sport==='tenis'?'tenis ATP':'fútbol')+' con datos suficientes para ese día.</p>';return}draw(true)};
+ SEL=(D.days[k]||[]).filter(x=>sport==='futbol'?(x.sp||'futbol')==='futbol':sport==='masters'?(x.sp==='tenis'&&x.mm):(x.sp==='tenis'&&!x.mm)).filter(x=>day>0||!x.t||(+x.t.slice(0,2)*60+ +x.t.slice(3))>nm).map(x=>({...x,eff:x.r||Math.max(1.01,1/(x.p*1.06)),val:x.r?x.p*x.r-1:null}));
+ if(!SEL.length){$('#out').innerHTML='<p class="e">No hay partidos de '+(sport==='tenis'?'tenis ATP':sport==='masters'?'Masters 1000':'fútbol')+' con datos suficientes para ese día.'+(sport==='masters'?' Los Masters 1000 solo aparecen mientras se juega el torneo.':'')+'</p>';return}draw(true)};
 function bestCombo(){const by={};SEL.filter(x=>x.eff>=1.1).forEach(x=>(by[x.h+x.a]??=[]).push(x));
  const M=Object.values(by).map(v=>v.sort((a,b)=>b.p-a.p).slice(0,8)),hi=need*1.25,Q=50,K=n=>Math.round(Math.log(n)*Q);
  let S=new Map([['0:0',{o:1,l:0,a:[]}]]);
