@@ -278,7 +278,7 @@ def tennis(days, key, res):
                         res[t.date().isoformat()].append(dict(sp='tenis', mm=mm, h=A, a=B, lg=sp['title'] + (' · Masters 1000' if mm else ''), t=t.strftime('%H:%M'), mk='Ganador del partido', s=me, p=round(p, 4), r=b365.get(me), n=nt))
                         info['añadidos'] += 1
     except Exception as e:
-        print('tenis:', e); D['error'] = str(e)[:120]
+        print('tenis:', e); m = str(e); D['error'] = ('Clave de The Odds API no válida (401).' if '401' in m else 'Sin créditos o límite de The Odds API (429).' if '429' in m else m[:120])
 
 # ---------- Simulación y aprendizaje ----------
 MASTERS = ['indian wells', 'miami', 'monte', 'madrid', 'rome', 'italian', 'canad', 'toronto', 'montreal', 'cincinnati', 'shanghai', 'paris']
@@ -314,7 +314,7 @@ def outcome_f(e, row):
     return None
 
 def tennis_scores(key):
-    out = {}
+    out = []
     try:
         base = 'https://api.the-odds-api.com/v4'
         def q(p):
@@ -325,9 +325,9 @@ def tennis_scores(key):
             try:
                 for g in q('/sports/%s/scores?daysFrom=3' % sp['key']):
                     if not (g.get('completed') and g.get('scores')): continue
-                    sc = {tn(x['name']): n(x['score']) for x in g['scores']}
+                    sc = {tn(x['name']): n(x['score']) for x in g['scores']}; nm = {tn(x['name']): x['name'] for x in g['scores']}
                     if len(sc) == 2 and not any(math.isnan(v) for v in sc.values()) and len(set(sc.values())) == 2:
-                        out[frozenset(sc)] = max(sc, key=sc.get)
+                        out.append(dict(d=(g.get('commence_time') or '')[:10], h=g['home_team'], a=g['away_team'], w=nm[max(sc, key=sc.get)]))
             except Exception as e: print('scores', sp['key'], e)
     except Exception as e: print('scores:', e)
     return out
@@ -367,7 +367,12 @@ def simulate(res, days, RES, tkey):
     for k, v in (('bets', []), ('cal', []), ('seen', []), ('stats', {}), ('bk', {})): sim.setdefault(k, v)
     today = days[0]; age = lambda d: (today - dt.date.fromisoformat(d)).days
     pend_t = any(x.get('sp') == 'tenis' for x in sim['cal']) or any(l.get('sp') == 'tenis' and l.get('ok') is None for b in sim['bets'] if b['status'] == 'pend' for l in b['legs'])
-    TS = tennis_scores(tkey) if tkey and pend_t else {}
+    tr = sim.setdefault('tr', []); known = {(x['d'], x['h'], x['a']) for x in tr}
+    if tkey and (dt.datetime.utcnow().hour >= 12 or not tr):
+        for x in tennis_scores(tkey):
+            if (x['d'], x['h'], x['a']) not in known: tr.append(x)
+    sim['tr'] = [x for x in tr if x['d'] and age(x['d']) <= 30]
+    TS = {frozenset((tn(x['h']), tn(x['a']))): tn(x['w']) for x in sim['tr']}
     def out(e, d):
         if e.get('sp') == 'tenis':
             w = TS.get(frozenset((tn(e['h']), tn(e['a'])))); return None if w is None else tn(e['s']) == w
@@ -437,7 +442,14 @@ def main():
     if tkey: tennis(days, tkey, res)
     try: sim = simulate(res, days, RES, tkey)
     except Exception as e: print('simulación:', e); sim = {}
-    json.dump({'updated': dt.datetime.utcnow().isoformat() + 'Z', 'days': res, 'sim': sim, 'diag': DIAG}, open('data.json', 'w', encoding='utf-8'), ensure_ascii=False)
+    if not tkey: DIAG['tenis'] = {'torneos': [], 'historial': 0, 'error': 'No se encontró la clave ODDS_API_KEY en los secretos de GitHub (Settings > Secrets and variables > Actions).'}
+    else: DIAG.setdefault('tenis', {'torneos': [], 'historial': 0, 'error': ''})['resultados'] = len(sim.get('tr', []))
+    cl = lambda v: None if (v is None or math.isnan(v)) else v
+    cut = (today - dt.timedelta(days=12)).isoformat(); rf = []
+    for (h, a, d), x in RES.items():
+        if d >= cut:
+            v = V(x); rf.append({'d': d, 'h': h, 'a': a, 'g': [cl(t) for t in v['g']], 'c': [cl(t) for t in v['c']], 'y': [cl(t) for t in v['y']], 's': [cl(t) for t in v['s']], 't': [cl(t) for t in v['t']]})
+    json.dump({'updated': dt.datetime.utcnow().isoformat() + 'Z', 'days': res, 'sim': sim, 'diag': DIAG, 'results': {'f': rf}}, open('data.json', 'w', encoding='utf-8'), ensure_ascii=False)
     print({k: len(v) for k, v in res.items()})
 
 if __name__ == '__main__': main()

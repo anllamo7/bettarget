@@ -34,7 +34,7 @@ input,select{width:100%;font:inherit;font-size:18px;padding:12px;border-radius:1
 </main>
 <script>
 const $=s=>document.querySelector(s),eur=n=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(n),f2=n=>n.toFixed(2).replace('.',','),pc=n=>Math.round(n*100)+'%';
-let sport='futbol',day=0,SEL=[],need=1,D=null;
+let LASTB=null,curK='',sport='futbol',day=0,SEL=[],need=1,D=null;
 $('#sp').onclick=e=>{if(!e.target.dataset.s)return;sport=e.target.dataset.s;document.querySelectorAll('#sp button').forEach(b=>b.classList.toggle('on',b===e.target))};
 $('#days').onclick=e=>{if(!e.target.dataset.d)return;day=+e.target.dataset.d;document.querySelectorAll('#days button').forEach(b=>b.classList.toggle('on',b===e.target))};
 fetch('data.json?'+Date.now()).then(r=>r.json()).then(j=>{D=j;const h=(Date.now()-new Date(j.updated))/36e5;$('#up').textContent='Datos actualizados: '+new Date(j.updated).toLocaleString('es-ES')+(h>30?' ⚠ pueden estar desfasados':'')}).catch(()=>{$('#up').textContent='Aún no hay datos publicados.'});
@@ -43,7 +43,7 @@ $('#go').onclick=()=>{const st=+$('#st').value,tg=+$('#tg').value;
  if(!(st>0)||!(tg>st)){$('#out').innerHTML='<p class="e">El objetivo debe ser mayor que el dinero disponible.</p>';return}
  if(!D){$('#out').innerHTML='<p class="e">Aún no hay datos publicados.</p>';return}
  need=tg/st;const d=new Date();d.setDate(d.getDate()+day);const k=d.toLocaleDateString('sv-SE'),now=new Date(),nm=now.getHours()*60+now.getMinutes();
- SEL=(D.days[k]||[]).filter(x=>sport==='futbol'?(x.sp||'futbol')==='futbol':sport==='masters'?(x.sp==='tenis'&&x.mm):(x.sp==='tenis'&&!x.mm)).filter(x=>day>0||!x.t||(+x.t.slice(0,2)*60+ +x.t.slice(3))>nm).map(x=>({...x,eff:x.r||Math.max(1.01,1/(x.p*1.06)),val:x.r?x.p*x.r-1:null}));
+ curK=k;SEL=(D.days[k]||[]).filter(x=>sport==='futbol'?(x.sp||'futbol')==='futbol':sport==='masters'?(x.sp==='tenis'&&x.mm):(x.sp==='tenis'&&!x.mm)).filter(x=>day>0||!x.t||(+x.t.slice(0,2)*60+ +x.t.slice(3))>nm).map(x=>({...x,eff:x.r||Math.max(1.01,1/(x.p*1.06)),val:x.r?x.p*x.r-1:null}));
  if(!SEL.length){$('#out').innerHTML='<p class="e">No hay partidos de '+(sport==='tenis'?'tenis ATP':sport==='masters'?'Masters 1000':'fútbol')+' con datos suficientes para ese día.'+(sport==='masters'?' Los Masters 1000 solo aparecen mientras se juega el torneo.':'')+(sport!=='futbol'?dg():'')+'</p>';return}draw(true)};
 function bestCombo(){const by={};SEL.filter(x=>x.eff>=1.1).forEach(x=>(by[x.h+x.a]??=[]).push(x));
  const M=Object.values(by).map(v=>v.sort((a,b)=>b.p-a.p).slice(0,8)),hi=need*1.25,Q=50,K=n=>Math.round(Math.log(n)*Q);
@@ -51,13 +51,14 @@ function bestCombo(){const by={};SEL.filter(x=>x.eff>=1.1).forEach(x=>(by[x.h+x.
  for(const c of M){const N=new Map(S);for(const s of S.values()){if(s.a.length>=10)continue;for(const x of c){const o=s.o*x.eff;if(o>hi)continue;const l=s.l+Math.log(x.p)-.03,k=(s.a.length+1)+':'+K(o),b=N.get(k);if(!b||l>b.l)N.set(k,{o,l,a:[...s.a,x]})}}S=N}
  let B=null;for(const s of S.values())if(s.a.length&&s.o>=need&&s.o<=hi&&(!B||s.l>B.l))B=s;
  return B&&{a:B.a,o:B.o,p:B.a.reduce((t,x)=>t*x.p,1)}}
+$('#out').addEventListener('click',e=>{if(e.target.id==='sv')saveSim()});
 function draw(first){const st=+$('#st').value,tg=+$('#tg').value;
  if(first){const mk=[...new Set(SEL.map(x=>x.mk.split(' · ')[0]))];$('#out').innerHTML=`<div class="card" style="text-align:center"><span class="n">Cuota necesaria</span><div style="font-size:28px;font-weight:800;color:var(--ac)">${f2(need)}</div></div><div id="bc"></div>
  <div class="flt"><select id="so"><option value="n">Ordenar: cercanía al objetivo</option><option value="p">Mayor probabilidad</option><option value="v">Mejor valor (cuota real)</option></select><select id="fm"><option value="">Mercado: todos</option>${mk.map(m=>`<option>${m}</option>`).join('')}</select></div><div id="ls"></div>`;
   $('#so').oninput=$('#fm').oninput=()=>draw();
-  const B=bestCombo();$('#bc').innerHTML=B?`<div class="card best"><b>🎯 Mi recomendación para tu objetivo</b><p class="w" style="margin:4px 0">La combinación más probable según los datos con cuota entre ${f2(need)} y ${f2(need*1.25)}. No es segura: nada lo es.</p>${B.p<.1?`<p class="w e">⚠ Con cuotas tan altas la probabilidad de acertar todo es muy baja (${pc(B.p)}). Cuanto mayor es la cuota, más selecciones hacen falta y más fácil es fallar.</p>`:''}${B.a.map(x=>`<div class="l"><span>${x.h} – ${x.a} · ${x.t}<small>${x.mk}: <b>${x.s}</b> · ${pc(x.p)}</small></span><b>${f2(x.eff)}${x.r?'':'*'}</b></div>`).join('')}
+  const B=bestCombo();LASTB=B;$('#bc').innerHTML=B?`<div class="card best"><b>🎯 Mi recomendación para tu objetivo</b><p class="w" style="margin:4px 0">La combinación más probable según los datos con cuota entre ${f2(need)} y ${f2(need*1.25)}. No es segura: nada lo es.</p>${B.p<.1?`<p class="w e">⚠ Con cuotas tan altas la probabilidad de acertar todo es muy baja (${pc(B.p)}). Cuanto mayor es la cuota, más selecciones hacen falta y más fácil es fallar.</p>`:''}${B.a.map(x=>`<div class="l"><span>${x.h} – ${x.a} · ${x.t}<small>${x.mk}: <b>${x.s}</b> · ${pc(x.p)}</small></span><b>${f2(x.eff)}${x.r?'':'*'}</b></div>`).join('')}
   <div class="l"><span>Cuota total</span><b>${f2(B.o)}</b></div><div class="l"><span>Cantidad necesaria para ${eur(tg)}</span><b>${eur(tg/B.o)}</b></div><div class="l"><span>Retorno con ${eur(st)}</span><b>${eur(st*B.o)}</b></div><div class="l"><span>Beneficio potencial</span><b>${eur(st*B.o-st)}</b></div><div class="l"><span>Probabilidad estimada</span><b>${pc(B.p)}</b></div>
-  <p class="w">* Cuota estimada (con un margen típico del 6 %), no es el precio real de la casa: revísala antes de decidir.</p></div>`:`<p class="n">No hay partidos suficientes ese día para llegar a la cuota ${f2(need)}. Prueba otro día o un objetivo menor.</p>`}
+  <p class="w">* Cuota estimada (con un margen típico del 6 %), no es el precio real de la casa: revísala antes de decidir.</p><button class="go" id="sv" style="margin-top:6px">💾 GUARDAR COMO SIMULACIÓN</button></div>`:`<p class="n">No hay partidos suficientes ese día para llegar a la cuota ${f2(need)}. Prueba otro día o un objetivo menor.</p>`}
  const so=$('#so').value,fm=$('#fm').value;let L=SEL.filter(x=>!fm||x.mk.split(' · ')[0]===fm);
  L.sort({n:(a,b)=>Math.abs(a.eff-need)-Math.abs(b.eff-need)||b.p-a.p,p:(a,b)=>b.p-a.p,v:(a,b)=>(b.val??-9)-(a.val??-9)}[so]);
  $('#ls').innerHTML=`<p class="n">${L.length} opciones (mostrando 30)</p>`+L.slice(0,30).map(x=>{const[c,t]=vb(x.val),ret=st*x.eff;return`<div class="card"><div class="top"><span>${x.sp==='tenis'?'🎾':'⚽'} ${x.lg}</span><span>${x.t}</span></div><div class="ev">${x.h} – ${x.a}</div><div class="sel">${x.mk}: <b>${x.s}</b></div>
@@ -67,9 +68,10 @@ function draw(first){const st=+$('#st').value,tg=+$('#tg').value;
 $('#tabs').onclick=e=>{const t=e.target.dataset.t;if(!t)return;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b===e.target));$('#bv').style.display=t==='b'?'':'none';$('#simv').style.display=t==='s'?'':'none';if(t==='s')simu()};
 function dg(){const T=D&&D.diag&&D.diag.tenis;if(!T)return' (Sin diagnóstico: falta la clave ODDS_API_KEY o la última actualización no incluía tenis.)';
  const L=T.torneos.map(x=>`${x.t}: ${x.activo?'activo':'inactivo'}${x.activo?`, ${x.eventos} partidos en la API, ${x.en_3_dias} en los próximos 3 días, ${x['añadidos']/2|0} añadidos${x.sin_datos?', '+x.sin_datos+' sin datos':''}${x.error?', error '+x.error:''}`:''}`);
- return'<br><small>Diagnóstico (última actualización): '+(T.error?'error '+T.error+'. ':'')+'historial '+T.historial+' partidos. '+(L.length?L.join(' · '):'La API no tiene ningún torneo ATP activo.')+'</small>'}
+ return'<br><small><b>Diagnóstico (última actualización): '+(T.error?T.error+' ':'')+'</b> Historial: '+T.historial+' partidos. '+(L.length?L.join(' · '):'La API no tiene ningún torneo ATP activo.')+'</small>'}
 function simu(){const S=D&&D.sim,el=$('#simv');
- if(!S||!S.bets||!S.bets.length){el.innerHTML='<div class="card"><p class="n">Aún no hay simulaciones. Se empiezan a registrar con las próximas actualizaciones automáticas.</p></div>';return}
+ if(!D){el.innerHTML='<p class="n">Cargando…</p>';return}
+ if(!S||!S.bets||!S.bets.length){el.innerHTML=mine()+'<div class="card"><p class="n">Aún no hay simulaciones automáticas. Se empiezan a registrar con las próximas actualizaciones.</p></div>';return}
  const ic={win:'✅',loss:'❌',pend:'⏳',void:'⚪'},prof=b=>b.status==='win'?b.stake*(b.odds-1):-b.stake,done=S.bets.filter(b=>b.status==='win'||b.status==='loss');
  const blk=(t,L)=>{const w=L.filter(b=>b.status==='win').length,p=L.reduce((a,b)=>a+prof(b),0),st=L.length*10;return`<div class="l"><span>${t}</span><span>${L.length?`${w}/${L.length} ganadas · <b class="${p>=0?'g':'r'}">${p>=0?'+':''}${eur(p)}</b> (${Math.round(p/st*100)}%)`:'sin resultados aún'}</span></div>`};
  const SP={futbol:'⚽ Fútbol',tenis:'🎾 Tenis'};
@@ -79,5 +81,28 @@ function simu(){const S=D&&D.sim,el=$('#simv');
  const F=Object.entries(S.factors||{}).sort((a,b)=>Math.abs(b[1]-1)-Math.abs(a[1]-1)).slice(0,8);
  o+=`<div class="card"><b>Ajustes aprendidos</b><p class="w" style="margin:4px 0">Cuando un tipo de mercado acumula 30 casos, sus probabilidades se corrigen hasta ±20 % según lo que ha ocurrido de verdad.</p>`+(F.length?F.map(([k,v])=>`<div class="l"><span>${k.replace(/\|/g,' · ')}</span><b class="${v>=1?'g':'r'}">×${f2(v)}</b></div>`).join(''):'<p class="n">Aún no hay datos suficientes para ajustar.</p>')+`</div>`;
  o+=`<p class="w">Los resultados de fútbol se registran cuando la fuente los publica (puede tardar días) y los de tenis solo si la API los devuelve. Con pocos casos los porcentajes no son fiables: hacen falta semanas. Una simulación pasada no garantiza resultados futuros.</p>`;
- el.innerHTML=o}
+ el.innerHTML=mine()+o}
+
+const nn=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z ]/g,' ').replace(/\s+/g,' ').trim(),num=s=>+s.match(/\d+(?:[,.]\d+)?/)[0].replace(',','.');
+function evalLeg(l,d){
+ if(l.sp==='tenis'){const T=[...((D.sim&&D.sim.tr)||[])];const r=T.find(x=>(nn(x.h)===nn(l.h)&&nn(x.a)===nn(l.a))||(nn(x.h)===nn(l.a)&&nn(x.a)===nn(l.h)));return r?nn(r.w)===nn(l.s):null}
+ const r=((D.results&&D.results.f)||[]).find(x=>x.d===d&&x.h===l.h&&x.a===l.a);if(!r||r.g[0]==null||r.g[1]==null)return null;
+ const[hg,ag]=r.g,mk=l.mk,s=l.s;
+ if(mk.startsWith('Resultado final'))return s===(hg>ag?r.h:ag>hg?r.a:'Empate');
+ if(mk.startsWith('Más/Menos 2,5'))return(hg+ag>2.5)===s.startsWith('Más');
+ if(mk.startsWith('Ambos'))return(hg>0&&ag>0)===(s==='Sí');
+ if(mk.startsWith('Doble'))return s.startsWith('1X')?hg>=ag:ag>=hg;
+ const base=mk.split(' · ')[0],K={'Córners':'c','Tarjetas':'y','Remates a puerta':'t','Remates':'s'},MS={'Más córners':'c','Más tarjetas':'y','Más remates a puerta':'t','Más remates':'s'};
+ if(MS[base]){const[a,b]=r[MS[base]];if(a==null||b==null)return null;return s===(a>b?r.h:b>a?r.a:'Empate')}
+ for(const k in K)if(base===k+' totales'||base===k+' de equipo'){const[a,b]=r[K[k]];if(a==null||b==null)return null;const v=base.endsWith('totales')?a+b:(mk.split(' · ')[1]===r.h?a:b);return(v>num(s))===s.startsWith('Más')}
+ return null}
+function getSaved(){try{return JSON.parse(localStorage.getItem('bt_saved')||'[]')}catch(e){return[]}}
+function saveSim(){if(!LASTB)return;const A=getSaved();
+ A.push({id:Date.now(),d:curK,sp:sport==='futbol'?'futbol':'tenis',st:+$('#st').value,tg:+$('#tg').value,odds:LASTB.o,p:LASTB.p,legs:LASTB.a.map(x=>({sp:x.sp||'futbol',h:x.h,a:x.a,mk:x.mk,s:x.s,eff:x.eff,p:x.p}))});
+ try{localStorage.setItem('bt_saved',JSON.stringify(A));$('#sv').textContent='✅ Guardada. Míralo en la pestaña SIMULACIÓN';$('#sv').disabled=true}catch(e){$('#sv').textContent='No se pudo guardar en este navegador'}}
+function mine(){const A=getSaved();
+ if(!A.length)return'<div class="card"><b>📒 Mis simulaciones</b><p class="w">Aún no has guardado ninguna. Haz una búsqueda y pulsa «Guardar como simulación» bajo la combinación recomendada. Cuando se jueguen los partidos verás aquí si la habrías acertado.</p></div>';
+ const R=A.map(b=>{const ok=b.legs.map(l=>evalLeg(l,b.d));return{b,ok,st:ok.some(x=>x===false)?'loss':ok.every(x=>x===true)?'win':'pend'}}),ic={win:'✅ ACERTADA',loss:'❌ FALLADA',pend:'⏳ PENDIENTE'},pf=r=>r.st==='win'?r.b.st*(r.b.odds-1):-r.b.st,dn=R.filter(r=>r.st!=='pend'),P=dn.reduce((a,r)=>a+pf(r),0);
+ return`<div class="card"><b>📒 Mis simulaciones guardadas</b><div class="l"><span>Resueltas</span><span>${dn.filter(r=>r.st==='win').length}/${dn.length} acertadas · <b class="${P>=0?'g':'r'}">${P>=0?'+':''}${eur(P)}</b></span></div>`+R.slice().reverse().map(r=>`<div class="l" style="display:block"><b>${ic[r.st]} · ${r.b.d} · ${r.b.sp==='tenis'?'🎾':'⚽'} cuota ${f2(r.b.odds)} · ${eur(r.b.st)} ${r.st==='win'?`→ <span class="g">+${eur(r.b.st*(r.b.odds-1))}</span>`:r.st==='loss'?`→ <span class="r">−${eur(r.b.st)}</span>`:''}</b> <button class="x" data-del="${r.b.id}" style="float:right;background:none;border:0;color:var(--r)">🗑</button>${r.b.legs.map((l,i)=>`<small style="display:block;color:var(--mu)">${r.ok[i]===true?'✅':r.ok[i]===false?'❌':'⏳'} ${l.h} – ${l.a} · ${l.mk}: ${l.s} @ ${f2(l.eff)}</small>`).join('')}</div>`).join('')+`<p class="w">Se guardan en este navegador. Los resultados aparecen cuando la fuente los publica (fútbol: puede tardar días; tenis: solo si la API los devuelve).</p></div>`}
+$('#simv').addEventListener('click',e=>{const i=e.target.dataset.del;if(i){try{localStorage.setItem('bt_saved',JSON.stringify(getSaved().filter(b=>String(b.id)!==i)))}catch(_){}simu()}});
 </script></body></html>
