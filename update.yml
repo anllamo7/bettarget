@@ -1,6 +1,6 @@
 name: Actualizar datos
 on:
-  schedule: [{cron: '0 5 * * *'}, {cron: '0 13 * * *'}]
+  schedule: [{cron: '0 5 * * *'}, {cron: '0 13 * * *'}, {cron: '30 17 * * *'}, {cron: '0 20 * * *'}]
   workflow_dispatch:
 permissions:
   contents: write

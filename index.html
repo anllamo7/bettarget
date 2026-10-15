@@ -67,7 +67,7 @@ function draw(first){const st=+$('#st').value,tg=+$('#tg').value;
 
 $('#tabs').onclick=e=>{const t=e.target.dataset.t;if(!t)return;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b===e.target));$('#bv').style.display=t==='b'?'':'none';$('#simv').style.display=t==='s'?'':'none';if(t==='s')simu()};
 function cnt(){const o=[0,1,2].map(i=>{const d=new Date();d.setDate(d.getDate()+i);return new Set(((D.days||{})[d.toLocaleDateString('sv-SE')]||[]).map(x=>x.h+x.a)).size});
- return'<br><small>Última actualización de datos: '+new Date(D.updated).toLocaleString('es-ES')+'. Partidos con datos → hoy: '+o[0]+', mañana: '+o[1]+', pasado: '+o[2]+'.</small>'}
+ return'<br><small>Última actualización de datos: '+new Date(D.updated).toLocaleString('es-ES')+'. Partidos con datos → hoy: '+o[0]+', mañana: '+o[1]+', pasado: '+o[2]+'.'+(D.diag&&D.diag.futbol?' Fuentes: football-data '+D.diag.futbol.football_data+', calendario openfootball '+D.diag.futbol.openfootball+'.':'')+'</small>'}
 function dg(){const T=D&&D.diag&&D.diag.tenis;if(!T)return' (Sin diagnóstico: falta la clave ODDS_API_KEY o la última actualización no incluía tenis.)';
  const L=T.torneos.map(x=>`${x.t}: ${x.activo?'activo':'inactivo'}${x.activo?`, ${x.eventos} partidos en la API, ${x.en_3_dias} en los próximos 3 días, ${x['añadidos']/2|0} añadidos${x.sin_datos?', '+x.sin_datos+' sin datos':''}${x.error?', error '+x.error:''}`:''}`);
  return'<br><small><b>Diagnóstico (última actualización): '+(T.error?T.error+' ':'')+'</b> Historial: '+T.historial+' partidos. '+(L.length?L.join(' · '):'La API no tiene ningún torneo ATP activo.')+'</small>'}

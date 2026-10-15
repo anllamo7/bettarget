@@ -1,6 +1,6 @@
 """Descarga datos gratuitos de football-data.co.uk (sin clave), calcula probabilidades
 con los últimos partidos de cada equipo y escribe data.json para los próximos 3 días."""
-import csv, io, json, math, os, re, time, unicodedata, urllib.request, datetime as dt
+import csv, difflib, io, json, math, os, re, time, unicodedata, urllib.request, datetime as dt
 BASE = 'https://www.football-data.co.uk/'
 LG = {'SP1': 'LaLiga', 'SP2': 'LaLiga 2', 'E0': 'Premier League', 'E1': 'Championship', 'E2': 'League One', 'I1': 'Serie A', 'I2': 'Serie B',
       'D1': 'Bundesliga', 'D2': '2. Bundesliga', 'F1': 'Ligue 1', 'F2': 'Ligue 2', 'N1': 'Eredivisie', 'P1': 'Primeira Liga',
@@ -420,10 +420,70 @@ def simulate(res, days, RES, tkey):
     sim['bets'] = sim['bets'][-300:]
     return sim
 
+# ---------- Calendario de respaldo: openfootball (dominio público, sin clave) ----------
+# football-data.co.uk publica el fin de semana el viernes por la tarde (y los entre semana el martes), así que
+# los partidos de jueves-viernes a veces faltan. openfootball tiene el calendario completo de la temporada.
+OF = {'SP1': 'es.1', 'SP2': 'es.2', 'E0': 'en.1', 'E1': 'en.2', 'E2': 'en.3', 'I1': 'it.1', 'I2': 'it.2', 'D1': 'de.1', 'D2': 'de.2',
+      'F1': 'fr.1', 'F2': 'fr.2', 'N1': 'nl.1', 'P1': 'pt.1', 'B1': 'be.1', 'T1': 'tr.1', 'SC0': 'sco.1', 'G1': 'gr.1'}
+CET = ('es', 'de', 'it', 'fr', 'nl', 'be')
+STOP = {'fc', 'cf', 'afc', 'sc', 'ac', 'as', 'rc', 'rcd', 'ud', 'cd', 'sd', 'sv', 'vfb', 'vfl', 'tsg', 'fsv', 'club', 'de', 'calcio', 'sk', 'bsc', 'ssc', 'us', 'og', 'the'}
+_AL = {'atletico madrid': 'ath madrid', 'club atletico de madrid': 'ath madrid', 'athletic club': 'ath bilbao', 'athletic bilbao': 'ath bilbao', 'real betis': 'betis', 'real sociedad': 'sociedad',
+       'rayo vallecano': 'vallecano', 'celta vigo': 'celta', 'espanyol': 'espanol', 'deportivo alaves': 'alaves', 'inter milan': 'inter', 'internazionale milano': 'inter', 'ac milan': 'milan',
+       'wolverhampton wanderers': 'wolves', 'nottingham forest': "nott'm forest", 'borussia monchengladbach': "m'gladbach", 'borussia dortmund': 'dortmund', 'bayer leverkusen': 'leverkusen',
+       'eintracht frankfurt': 'ein frankfurt', 'paris saint germain': 'paris sg', 'olympique marseille': 'marseille', 'olympique lyonnais': 'lyon', 'tottenham hotspur': 'tottenham',
+       'brighton hove albion': 'brighton', 'west ham united': 'west ham', 'newcastle united': 'newcastle', 'leicester city': 'leicester', 'manchester united': 'man united', 'manchester city': 'man city',
+       'bayern munchen': 'bayern munich', 'hellas verona': 'verona', 'sporting clube de portugal': 'sporting cp', 'sporting cp': 'sporting cp', 'sl benfica': 'benfica', 'psv eindhoven': 'psv'}
+def nrm(x): return tn(x)
+ALIAS2 = {nrm(k): v for k, v in _AL.items()}
+def tkey_(x): return ' '.join(t for t in nrm(x).split() if t not in STOP)
+ALIAS3 = {tkey_(k): v for k, v in _AL.items()}
+
+def mapteam(name, cands):
+    CK = {tkey_(c): c for c in cands}; k = tkey_(name)
+    if k in CK: return CK[k]
+    a = ALIAS2.get(nrm(name)) or ALIAS2.get(k)
+    if a and tkey_(a) in CK: return CK[tkey_(a)]
+    tk = k.split(); best = []
+    for ak in sorted(ALIAS3, key=lambda z: -len(z.split())):
+        if set(ak.split()) <= set(tk) and tkey_(ALIAS3[ak]) in CK: return CK[tkey_(ALIAS3[ak])]
+    for ck, c in CK.items():
+        ct = ck.split()
+        if ct and all(any(w.startswith(t) for w in tk) for t in ct): best.append((len(ct), c))
+        elif tk and all(any(t.startswith(w) for w in ct) for t in tk): best.append((len(tk), c))
+    if best:
+        best.sort(reverse=True)
+        if len(best) == 1 or best[0][0] > best[1][0]: return best[0][1]
+    m = difflib.get_close_matches(k, list(CK), n=1, cutoff=.75)
+    return CK[m[0]] if m else None
+
+def of_fixtures(div, y, days, cands, miss):
+    out = []; code = OF.get(div)
+    if not code: return out
+    try:
+        rq = urllib.request.Request('https://raw.githubusercontent.com/openfootball/football.json/master/%d-%02d/%s.json' % (y, (y + 1) % 100, code), headers={'User-Agent': 'Mozilla/5.0'})
+        j = json.loads(urllib.request.urlopen(rq, timeout=40).read().decode())
+    except Exception as e:
+        print('openfootball', div, e); return out
+    ms = j.get('matches') or [m for r in j.get('rounds', []) for m in r.get('matches', [])]
+    for m in ms:
+        try: d = dt.date.fromisoformat(m['date'][:10])
+        except Exception: continue
+        if d not in days: continue
+        t1, t2 = m['team1'], m['team2']
+        t1 = t1['name'] if isinstance(t1, dict) else t1; t2 = t2['name'] if isinstance(t2, dict) else t2
+        h, a = mapteam(t1, cands), mapteam(t2, cands)
+        if not h or not a: miss.append('%s-%s' % (t1, t2)); continue
+        tm = (m.get('time') or '')[:5]
+        if tm and code[:2] in CET:
+            hh, mm = tm.split(':'); tm = '%02d:%s' % ((int(hh) - 1) % 24, mm)
+        elif code[:2] in ('tr', 'gr'): tm = ''
+        out.append({'Div': div, 'Date': d.strftime('%d/%m/%Y'), 'Time': tm, 'HomeTeam': h, 'AwayTeam': a})
+    return out
+
 def main():
     today = dt.date.today(); days = [today + dt.timedelta(i) for i in range(3)]
     y = today.year if today.month >= 7 else today.year - 1
-    fx = rows(get('fixtures.csv')); res = {d.isoformat(): [] for d in days}; fdfix = []; RES = {}
+    fx = rows(get('fixtures.csv')); res = {d.isoformat(): [] for d in days}; fdfix = []; RES = {}; DF = {'csv': 0, 'extra': 0}; miss = []
     for div in LG:
         hist = []
         for s in (y - 1, y):
@@ -431,11 +491,17 @@ def main():
             except Exception as e: print('sin', div, s, e)
         hist = sorted([x for x in hist if x.get('FTHG') and x.get('Date')], key=lambda x: pdate(x['Date']))
         for x in hist: RES[(x['HomeTeam'], x['AwayTeam'], pdate(x['Date']).isoformat())] = x
-        for r in fx:
-            if r.get('Div') != div or not r.get('Date'): continue
+        mine = [r for r in fx if r.get('Div') == div and r.get('Date')]
+        have = {(pdate(r['Date']), r['HomeTeam'], r['AwayTeam']) for r in mine}
+        cands = {x['HomeTeam'] for x in hist} | {x['AwayTeam'] for x in hist}
+        extra = [r for r in of_fixtures(div, y, days, cands, miss) if (pdate(r['Date']), r['HomeTeam'], r['AwayTeam']) not in have]
+        DF['extra'] += len(extra)
+        for r in mine + extra:
             d = pdate(r['Date'])
             if d in days:
+                if r in mine: DF['csv'] += 1
                 res[d.isoformat()] += analyze(r, hist, div); fdfix.append(dict(d=d, h=r['HomeTeam'], a=r['AwayTeam']))
+    DIAG['futbol'] = {'football_data': DF['csv'], 'openfootball': DF['extra'], 'sin_mapear': miss[:8]}
     key = os.environ.get('APIFOOTBALL_KEY', '').strip()
     if key: players(days, fdfix, res, key)
     tkey = ''  # tenis desactivado (sin clave de The Odds API)
