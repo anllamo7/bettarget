@@ -44,7 +44,7 @@ $('#go').onclick=()=>{const st=+$('#st').value,tg=+$('#tg').value;
  if(!D){$('#out').innerHTML='<p class="e">Aún no hay datos publicados.</p>';return}
  need=tg/st;const d=new Date();d.setDate(d.getDate()+day);const k=d.toLocaleDateString('sv-SE'),now=new Date(),nm=now.getHours()*60+now.getMinutes();
  curK=k;SEL=(D.days[k]||[]).filter(x=>sport==='futbol'?(x.sp||'futbol')==='futbol':(x.sp==='tenis'&&!x.mm)).filter(x=>day>0||!x.t||(+x.t.slice(0,2)*60+ +x.t.slice(3))>nm).map(x=>({...x,eff:x.r||Math.max(1.01,1/(x.p*1.06)),val:x.r?x.p*x.r-1:null}));
- if(!SEL.length){$('#out').innerHTML='<p class="e">No hay partidos de '+(sport==='tenis'?'tenis ATP':'fútbol')+' con datos suficientes para ese día.'+(sport!=='futbol'?dg():'')+'</p>';return}draw(true)};
+ if(!SEL.length){$('#out').innerHTML='<p class="e">No hay partidos de '+(sport==='tenis'?'tenis ATP':'fútbol')+' con datos suficientes para ese día.'+cnt()+'</p>';return}draw(true)};
 function bestCombo(){const by={};SEL.filter(x=>x.eff>=1.1).forEach(x=>(by[x.h+x.a]??=[]).push(x));
  const M=Object.values(by).map(v=>v.sort((a,b)=>b.p-a.p).slice(0,8)),hi=need*1.25,Q=50,K=n=>Math.round(Math.log(n)*Q);
  let S=new Map([['0:0',{o:1,l:0,a:[]}]]);
@@ -66,6 +66,8 @@ function draw(first){const st=+$('#st').value,tg=+$('#tg').value;
  <div class="bd ${c}">${t}</div><div class="sel">${x.n}</div></div>`}).join('')}
 
 $('#tabs').onclick=e=>{const t=e.target.dataset.t;if(!t)return;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b===e.target));$('#bv').style.display=t==='b'?'':'none';$('#simv').style.display=t==='s'?'':'none';if(t==='s')simu()};
+function cnt(){const o=[0,1,2].map(i=>{const d=new Date();d.setDate(d.getDate()+i);return new Set(((D.days||{})[d.toLocaleDateString('sv-SE')]||[]).map(x=>x.h+x.a)).size});
+ return'<br><small>Última actualización de datos: '+new Date(D.updated).toLocaleString('es-ES')+'. Partidos con datos → hoy: '+o[0]+', mañana: '+o[1]+', pasado: '+o[2]+'.</small>'}
 function dg(){const T=D&&D.diag&&D.diag.tenis;if(!T)return' (Sin diagnóstico: falta la clave ODDS_API_KEY o la última actualización no incluía tenis.)';
  const L=T.torneos.map(x=>`${x.t}: ${x.activo?'activo':'inactivo'}${x.activo?`, ${x.eventos} partidos en la API, ${x.en_3_dias} en los próximos 3 días, ${x['añadidos']/2|0} añadidos${x.sin_datos?', '+x.sin_datos+' sin datos':''}${x.error?', error '+x.error:''}`:''}`);
  return'<br><small><b>Diagnóstico (última actualización): '+(T.error?T.error+' ':'')+'</b> Historial: '+T.historial+' partidos. '+(L.length?L.join(' · '):'La API no tiene ningún torneo ATP activo.')+'</small>'}
