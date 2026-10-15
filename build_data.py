@@ -93,7 +93,7 @@ def analyze(r, hist, div):
         add('Ambos marcan', 'Sí', b, None, note); add('Ambos marcan', 'No', 1 - b, None, note)
         add('Doble oportunidad', '1X · ' + r['HomeTeam'] + ' o empate', h + d, None, note)
         add('Doble oportunidad', 'X2 · ' + r['AwayTeam'] + ' o empate', a + d, None, note)
-    for k in 'cyst':
+    for k in 'cys':
         M = mu(k)
         if not M: continue
         tot = M[0] + M[1]; sd = math.sqrt(tot * PH[k]); base = math.floor(tot) + .5
@@ -246,8 +246,8 @@ def tennis(days, key, res):
             if not sp['key'].startswith('tennis_atp'): continue
             ti = (sp['title'] + ' ' + sp['key'].replace('_', ' ')).lower(); mm = int(any(c in ti for c in MASTERS))
             info = {'t': sp['title'], 'activo': bool(sp.get('active')), 'eventos': 0, 'en_3_dias': 0, 'sin_datos': 0, 'añadidos': 0}
-            if sp.get('active') or mm: D['torneos'].append(info)
-            if not sp.get('active'): continue
+            if sp.get('active') and not mm: D['torneos'].append(info)
+            if not sp.get('active') or mm: continue
             sf = 'Clay' if any(c in ti for c in CLAY) else 'Grass' if any(c in ti for c in GRASS) else 'Hard'; bo5 = any(c in ti for c in SLAM)
             try: evs = q('/sports/%s/odds?regions=eu&markets=h2h&oddsFormat=decimal' % sp['key'])
             except Exception as e: print('tenis', sp['key'], e); info['error'] = str(e)[:80]; continue
@@ -410,7 +410,7 @@ def simulate(res, days, RES, tkey):
             sim['cal'].append(dict(d=d, sp=e.get('sp', 'futbol'), h=e['h'], a=e['a'], mk=e['mk'], s=e['s'], p0=e['p0']))
     sim['seen'] = sim['seen'][-6000:]
     L0 = [e for e in res.get(today.isoformat(), []) if not e.get('t') or e['t'] > nowm]
-    for sp in ('futbol', 'tenis'):
+    for sp in ('futbol',):
         for tg in (2, 5):
             bid = '%s|%s|%d' % (today.isoformat(), sp, tg)
             if any(b['id'] == bid for b in sim['bets']): continue
@@ -438,12 +438,9 @@ def main():
                 res[d.isoformat()] += analyze(r, hist, div); fdfix.append(dict(d=d, h=r['HomeTeam'], a=r['AwayTeam']))
     key = os.environ.get('APIFOOTBALL_KEY', '').strip()
     if key: players(days, fdfix, res, key)
-    tkey = os.environ.get('ODDS_API_KEY', '').strip()
-    if tkey: tennis(days, tkey, res)
+    tkey = ''  # tenis desactivado (sin clave de The Odds API)
     try: sim = simulate(res, days, RES, tkey)
     except Exception as e: print('simulación:', e); sim = {}
-    if not tkey: DIAG['tenis'] = {'torneos': [], 'historial': 0, 'error': 'No se encontró la clave ODDS_API_KEY en los secretos de GitHub (Settings > Secrets and variables > Actions).'}
-    else: DIAG.setdefault('tenis', {'torneos': [], 'historial': 0, 'error': ''})['resultados'] = len(sim.get('tr', []))
     cl = lambda v: None if (v is None or math.isnan(v)) else v
     cut = (today - dt.timedelta(days=12)).isoformat(); rf = []
     for (h, a, d), x in RES.items():
